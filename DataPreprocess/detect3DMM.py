@@ -6,6 +6,7 @@ import os
 import numpy as np
 import torch
 import pickle
+import math
 from skimage.transform import estimate_transform, warp
     
 
@@ -34,7 +35,7 @@ def preprocess_for_emoca(image, kpt, crop_size=224, scale=1.25):
     dst_image = torch.tensor(dst_image).float()
     return dst_image
 
-def detect_3dmm(landmarks_list, aligned_imgs, emoca, save_folder_path = None, crop_size=224):
+def detect_3dmm(landmarks_list, aligned_imgs, emoca, save_folder_path = None, crop_size=224, batch_size = 64):
     # aligned_imgs: python list of np.array, (target_size, target_size, 3), RGB, 0-255, uint8
 
     if isinstance(aligned_imgs, list):
@@ -46,8 +47,21 @@ def detect_3dmm(landmarks_list, aligned_imgs, emoca, save_folder_path = None, cr
     else:
         preprocessed_imgs = preprocess_for_emoca(aligned_imgs.copy(), landmarks_list).view(1, 3, crop_size, crop_size)
 
-    preprocessed_imgs = preprocessed_imgs.cuda()
-    shapecode, texcode, expcode, posecode, cam, lightcode = emoca.encode(preprocessed_imgs)
+    with torch.no_grad():
+        steps = int(math.ceil(preprocessed_imgs.shape[0] / batch_size))
+        for step in range(steps):
+            preprocessed_batch = preprocessed_imgs[step * batch_size : min((step + 1) * batch_size, preprocessed_imgs.shape[0]), :].cuda()
+            
+            if step == 0:
+                shapecode, texcode, expcode, posecode, cam, lightcode = emoca.encode(preprocessed_batch)
+            else:
+                shapecode_batch, texcode_batch, expcode_batch, posecode_batch, cam_batch, lightcode_batch = emoca.encode(preprocessed_batch)
+                shapecode = torch.cat((shapecode, shapecode_batch))
+                texcode = torch.cat((texcode, texcode_batch))
+                expcode = torch.cat((expcode, expcode_batch))
+                posecode = torch.cat((posecode, posecode_batch))
+                cam = torch.cat((cam, cam_batch))
+                lightcode = torch.cat((lightcode, lightcode_batch))
 
     dict_3dmm = {}
     dict_3dmm['shapecode'] = shapecode

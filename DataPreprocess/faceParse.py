@@ -8,6 +8,7 @@ import numpy as np
 from PIL import Image
 import torchvision.transforms as transforms
 import cv2
+import math
 import pickle
 
 def vis_parsing_maps(im, parsing_anno, stride, save_im=False, save_path='vis_results/parsing_map_on_im.jpg'):
@@ -54,17 +55,27 @@ def vis_parsing_maps(im, parsing_anno, stride, save_im=False, save_path='vis_res
 
     # return vis_im
 
-def face_parse(aligned_imgs, net, save_folder_path = None):
+def face_parse(aligned_imgs, net, save_folder_path = None, batch_size = 64):
 
     to_tensor = transforms.Compose([
         transforms.ToTensor(),
         transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
     ])
+
     with torch.no_grad():
         imgs_numpy = np.asarray([np.asarray(to_tensor(Image.fromarray(img).resize((512, 512), Image.BILINEAR))) for img in aligned_imgs])
         imgs = torch.from_numpy(imgs_numpy)
-        imgs = imgs.cuda()
-        out = net(imgs)[0]
+
+        steps = int(math.ceil(imgs.shape[0] / batch_size))
+        for step in range(steps):
+            imgs_batch = imgs[step * batch_size : min((step + 1) * batch_size, imgs.shape[0]), :].cuda()
+            
+            if step == 0:
+                out = net(imgs_batch)[0]
+            else:
+                out_batch = net(imgs_batch)[0]
+                out = torch.cat((out, out_batch))
+
         parsing = out.cpu().numpy().argmax(1) # numpy but size is 512 , B * 512 * 512
         parsing = parsing[:, ::2, ::2] # resize to 256
 

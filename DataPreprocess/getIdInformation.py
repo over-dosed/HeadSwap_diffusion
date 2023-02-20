@@ -3,6 +3,7 @@
 import os
 from PIL import Image
 import pickle
+import math
 import numpy as np
 
 import torch
@@ -34,7 +35,7 @@ def process_a_image(lms, img, reshape_size = 128, up_expand_rate = 0.3):
     return img
 
 
-def get_id_featurs(landmarks_list, aligned_imgs, model, save_folder_path = None, batch_size=10):
+def get_id_featurs(landmarks_list, aligned_imgs, model, save_folder_path = None, batch_size=64):
     ## aligned_imgs: python list of np.array, (target_size, target_size, 3), RGB, 0-255, uint8
     
     images = None
@@ -47,8 +48,18 @@ def get_id_featurs(landmarks_list, aligned_imgs, model, save_folder_path = None,
             images = np.concatenate((images, image), axis=0)
 
     images = torch.from_numpy(images)
-    images = images.cuda()
-    output = model(images)
+
+    with torch.no_grad():
+        steps = int(math.ceil(images.shape[0] / batch_size))
+        for step in range(steps):
+            imgs_batch = images[step * batch_size : min((step + 1) * batch_size, images.shape[0]), :].cuda()
+            
+            if step == 0:
+                output = model(imgs_batch)
+            else:
+                output_batch = model(imgs_batch)
+                output = torch.cat((output, output_batch))
+
     output = output.data.cpu().numpy()
     fe_1 = output[::2]
     fe_2 = output[1::2]
