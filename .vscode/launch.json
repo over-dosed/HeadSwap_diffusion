@@ -11,7 +11,7 @@
             "program": "${file}",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "env": { "name":"CUDA_VISIBLE_DEVICES", "value":"0, 1"},
+            "env": { "name":"CUDA_VISIBLE_DEVICES", "value":"0"},
             "args": [
                 "--root_path", "/data0/wc_data/vggface2/train",
                 "--save_root_path", "/data0/wc_data/vggface2_preprocessed/train",

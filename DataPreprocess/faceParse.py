@@ -76,7 +76,8 @@ def face_parse(aligned_imgs, net, save_folder_path = None, batch_size = 64):
                 out_batch = net(imgs_batch)[0]
                 out = torch.cat((out, out_batch))
 
-        parsing = out.cpu().numpy().argmax(1) # numpy but size is 512 , B * 512 * 512
+        parsing = out.argmax(1)
+        parsing = parsing.cpu().numpy() # numpy but size is 512 , B * 512 * 512
         parsing = parsing[:, ::2, ::2] # resize to 256
 
         # only for test
