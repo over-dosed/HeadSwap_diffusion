@@ -11,6 +11,7 @@ import argparse
 from tqdm import tqdm
 
 import torch
+from face_alignment.detection.sfd.sfd_detector import SFDDetector
 
 from HSD.DataPreprocess.preprocessAFolder import preprocessAFolder
 from HSD.DataPreprocess.FaceDetector import FAN
@@ -22,17 +23,17 @@ def main():
     parser = argparse.ArgumentParser()
     # add the input folder arg 
     parser.add_argument('--root_path', type=str, help="vggface2 train or test path. e.g. /home/zxy/data/vggface2/train" )
-    parser.add_argument('--save_root_path', type=str, help="the root path to save preprocessed data. e.g. /home/zxy/data/vggface2/train" )
+    # parser.add_argument('--save_root_path', type=str, help="the root path to save preprocessed data. e.g. /home/zxy/data/vggface2/train" )
     parser.add_argument('--start_id', type=str, default=None, help="the id you want to start from")
 
     # filter image
-    parser.add_argument('--min_origin_size', type=int, default=256)
+    # parser.add_argument('--min_origin_size', type=int, default=256)
     parser.add_argument('--min_image_number', type=int, default=15)
 
-    # crop@align
-    parser.add_argument('--target_size', type=int, default=256, help="size if aligned images")
-    parser.add_argument('--expand_rate_up', type=float, default=1, help="up expand rate for croping images")
-    parser.add_argument('--expand_rate_down', type=float, default=0.3, help="down expand rate for croping images")
+    # # crop@align
+    # parser.add_argument('--target_size', type=int, default=256, help="size if aligned images")
+    # parser.add_argument('--expand_rate_up', type=float, default=1, help="up expand rate for croping images")
+    # parser.add_argument('--expand_rate_down', type=float, default=0.3, help="down expand rate for croping images")
 
     # detect 3DMM
     parser.add_argument('--emoca_asset_dir', type=str, default='/home/wenchi/zxy/HSD/utils/emoca/assets', help="emoca asset dir")
@@ -46,7 +47,8 @@ def main():
     args = parser.parse_args()
 
     ### prepare models
-    face_detector = FAN()   # face detect
+    #face_detector = FAN()   # face detect
+    face_detector = SFDDetector(device='cuda')
 
     asset_dir = args.emoca_asset_dir         # detect 3DMM
     path_to_models = os.path.join(asset_dir, 'EMOCA', 'models')
@@ -88,9 +90,8 @@ def main():
         pbar.set_postfix({"正在处理": folder_name})
 
         folder_path = os.path.join(args.root_path, folder_name)
-        save_folder_path = os.path.join(args.save_root_path, folder_name)
 
-        preprocessAFolder(args, folder_path, save_folder_path, face_detector, emoca, face_parse_net, arcface_model)
+        preprocessAFolder(args, folder_path, face_detector, emoca, face_parse_net, arcface_model)
 
 
 if __name__ == '__main__':

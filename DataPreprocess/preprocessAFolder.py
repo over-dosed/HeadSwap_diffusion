@@ -12,14 +12,14 @@ from HSD.DataPreprocess.detect3DMM import detect_3dmm
 from HSD.DataPreprocess.faceParse import face_parse
 from HSD.DataPreprocess.getIdInformation import get_id_featurs
 
-def preprocessAFolder(args, folder_path, save_folder_path, face_detector, emoca, face_parse_net, arcface_model):
+def preprocessAFolder(args, folder_path, face_detector, emoca, face_parse_net, arcface_model):
 
     # get args
     target_size = args.target_size
     expand_rate_up = args.expand_rate_up
     expand_rate_down = args.expand_rate_down
 
-    imagepath_list = sorted(glob(folder_path + '/*.jpg') + glob(folder_path + '/*.png') + glob(folder_path + '/*.bmp'))
+    imagepath_list = sorted(glob(folder_path + '/*.png'))
     imgs = [Image.open(imagepath).convert("RGB") for imagepath in imagepath_list]
 
     ## filter image size
@@ -28,14 +28,14 @@ def preprocessAFolder(args, folder_path, save_folder_path, face_detector, emoca,
         return
 
     ## get lms and aligned images
-    if os.path.exists(os.path.join(save_folder_path, 'lm.pkl')):
-        with open(os.path.join(save_folder_path, 'lm.pkl'), 'rb') as f:
+    if os.path.exists(os.path.join(folder_path, 'lm.pkl')):
+        with open(os.path.join(folder_path, 'lm.pkl'), 'rb') as f:
             landmarks_list = pickle.load(f)
-        saved_imagepath_list = sorted(glob(save_folder_path + '/*.jpg'))
+        saved_imagepath_list = sorted(glob(folder_path + '/*.png'))
         aligned_imgs = [np.asarray(Image.open(img_path).convert("RGB")) for img_path in saved_imagepath_list]
     
     else:
-        landmarks_list, aligned_imgs = process_images(target_size, expand_rate_up, expand_rate_down, filtered_imgs, face_detector, save_folder_path)
+        landmarks_list, aligned_imgs = process_images(target_size, expand_rate_up, expand_rate_down, filtered_imgs, face_detector)
 
     # only for test ; test lms
     # test_img = aligned_imgs[31]
@@ -56,16 +56,16 @@ def preprocessAFolder(args, folder_path, save_folder_path, face_detector, emoca,
 
     ## aligned_imgs: python list of np.array, (target_size, target_size, 3), RGB, 0-255, uint8
 
-    ## get 3DMM
-    if not os.path.exists(os.path.join(save_folder_path, '3DMM.pkl')):
-        detect_3dmm(landmarks_list, aligned_imgs, emoca, save_folder_path)
-
     ## get face-parse
-    if not os.path.exists(os.path.join(save_folder_path, 'parse.pkl')):
-        face_parse(aligned_imgs, face_parse_net, save_folder_path)
+    if not os.path.exists(os.path.join(folder_path, 'parse.pkl')):
+        face_parse(aligned_imgs, face_parse_net, folder_path)
+
+    ## get 3DMM
+    if not os.path.exists(os.path.join(folder_path, '3DMM.pkl')):
+        detect_3dmm(landmarks_list, aligned_imgs, emoca, folder_path)
 
     ## get id information
-    if not os.path.exists(os.path.join(save_folder_path, 'id.pkl')):
-        get_id_featurs(landmarks_list, aligned_imgs, arcface_model, save_folder_path)
+    if not os.path.exists(os.path.join(folder_path, 'id.pkl')):
+        get_id_featurs(landmarks_list, aligned_imgs, arcface_model, folder_path)
         
     return
