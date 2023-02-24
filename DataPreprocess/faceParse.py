@@ -78,7 +78,7 @@ def face_parse(imgs_numpy, net, save_folder_path = None, batch_size = 64):
             else:
                 out = torch.cat((out, out_batch))
 
-    parsing = parsing.numpy() # numpy but size is 512 , B * 512 * 512
+    parsing = out.numpy() # numpy but size is 512 , B * 512 * 512
 
     masks = np.where( (parsing == 0)|(parsing == 14)|(parsing == 16), 0, 255).astype('uint8')  # 0 or 255
     for i in range(masks.shape[0]):
