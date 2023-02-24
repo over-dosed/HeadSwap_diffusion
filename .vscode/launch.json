@@ -13,7 +13,7 @@
             "justMyCode": true,
             "env": { "name":"CUDA_VISIBLE_DEVICES", "value":"2,3"},
             "args": [
-                // "--root_path", "/data0/wc_data/vggface2/train",
+                "--root_path", "/data0/wc_data/VFHQ/test",
                 // "--save_root_path", "/data0/wc_data/vggface2_preprocessed/train",
                 // "--start_id", "21",
             ],
