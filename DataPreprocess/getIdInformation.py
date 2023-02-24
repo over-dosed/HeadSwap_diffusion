@@ -33,7 +33,7 @@ def process_a_image(bbox, img, reshape_size = 128):
     aligned_img[crop_top:crop_bottom, crop_left:crop_right] = img[origin_top:origin_bottom, origin_left:origin_right]
     aligned_img = Image.fromarray(aligned_img)
     aligned_img = aligned_img.resize((reshape_size, reshape_size), Image.LANCZOS).convert('L')
-    aligned_img.save('/home/wenchi/zxy/HSD/test_arcface.jpg')
+    # aligned_img.save('/home/wenchi/zxy/HSD/test_arcface.jpg')
     img = np.asarray(aligned_img)
     img = np.dstack((img, np.fliplr(img)))
     img = img.transpose((2, 0, 1))
