@@ -55,7 +55,7 @@ def vis_parsing_maps(im, parsing_anno, stride, save_im=False, save_path='vis_res
 
     # return vis_im
 
-def face_parse(aligned_imgs, net, save_folder_path = None, batch_size = 64):
+def face_parse(imgs_numpy, net, save_folder_path = None, batch_size = 64):
 
     to_tensor = transforms.Compose([
         transforms.ToTensor(),
@@ -63,30 +63,29 @@ def face_parse(aligned_imgs, net, save_folder_path = None, batch_size = 64):
     ])
 
     with torch.no_grad():
-        imgs_numpy = np.asarray([np.asarray(to_tensor(Image.fromarray(img).resize((512, 512), Image.BILINEAR))) for img in aligned_imgs])
-        imgs = torch.from_numpy(imgs_numpy)
+        imgs_tensor = torch.zeros((imgs_numpy.shape[0], 3, 512, 512))
+        for i in range(imgs_numpy.shape[0]):
+            temp = to_tensor(imgs_numpy[i].transpose(1, 2, 0))
+            imgs_tensor[i, :] = temp
 
-        steps = int(math.ceil(imgs.shape[0] / batch_size))
+        steps = int(math.ceil(imgs_tensor.shape[0] / batch_size))
         for step in range(steps):
-            imgs_batch = imgs[step * batch_size : min((step + 1) * batch_size, imgs.shape[0]), :].cuda()
-            
+            imgs_batch = imgs_tensor[step * batch_size : min((step + 1) * batch_size, imgs_tensor.shape[0]), :].cuda()
+            out_batch = net(imgs_batch)[0].argmax(1).cpu()
+
             if step == 0:
-                out = net(imgs_batch)[0]
+                out = out_batch
             else:
-                out_batch = net(imgs_batch)[0]
                 out = torch.cat((out, out_batch))
 
-        parsing = out.argmax(1)
-        parsing = parsing.cpu().numpy() # numpy but size is 512 , B * 512 * 512
-        parsing = parsing[:, ::2, ::2] # resize to 256
+    parsing = out.numpy() # numpy but size is 512 , B * 512 * 512
 
-        # only for test
-        # image = Image.fromarray(aligned_imgs[50])
-        # vis_parsing_maps(image, parsing[50], stride=1, save_im=True, save_path='/home/zxy/HSD/DataPreprocess/test_5.jpg')
-
-    if save_folder_path is not None:
-        with open(os.path.join(save_folder_path, 'parse.pkl'), 'wb') as f:
-            pickle.dump(parsing, f)
+    masks = np.where( (parsing == 0)|(parsing == 14)|(parsing == 16), 0, 255).astype('uint8')  # 0 or 255
+    for i in range(masks.shape[0]):
+        mask = cv2.GaussianBlur(masks[i], (19, 19), 20)
+        mask = np.where( (mask < 20), 0, 255).astype('uint8')  # 0 or 255
+        if save_folder_path is not None:
+            cv2.imwrite(os.path.join(save_folder_path, 'mask_'+str(i).zfill(8)+'.jpg'), mask)
 
     return parsing
         

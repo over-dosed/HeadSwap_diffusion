@@ -11,10 +11,13 @@ import argparse
 from tqdm import tqdm
 
 import torch
+from face_alignment.detection.sfd.sfd_detector import SFDDetector
 
 from HSD.DataPreprocess.preprocessAFolder import preprocessAFolder
-from HSD.DataPreprocess.FaceDetector import FAN
-from HSD.utils.emoca.load import load_model
+
+from HSD.utils.DECA.decalib.deca import DECA
+from HSD.utils.DECA.decalib.utils.config import cfg as deca_cfg
+
 from HSD.utils.face_parse.model import BiSeNet
 from HSD.utils.arcface_pytorch.models.resnet import resnet_face18
 
@@ -22,20 +25,23 @@ def main():
     parser = argparse.ArgumentParser()
     # add the input folder arg 
     parser.add_argument('--root_path', type=str, help="vggface2 train or test path. e.g. /home/zxy/data/vggface2/train" )
-    parser.add_argument('--save_root_path', type=str, help="the root path to save preprocessed data. e.g. /home/zxy/data/vggface2/train" )
-    parser.add_argument('--start_id', type=str, default=None, help="the id you want to start from")
 
     # filter image
-    parser.add_argument('--min_origin_size', type=int, default=256)
+    # parser.add_argument('--min_origin_size', type=int, default=256)
     parser.add_argument('--min_image_number', type=int, default=15)
 
-    # crop@align
-    parser.add_argument('--target_size', type=int, default=256, help="size if aligned images")
-    parser.add_argument('--expand_rate_up', type=float, default=1, help="up expand rate for croping images")
-    parser.add_argument('--expand_rate_down', type=float, default=0.3, help="down expand rate for croping images")
+    # # crop@align
+    # parser.add_argument('--target_size', type=int, default=256, help="size if aligned images")
+    # parser.add_argument('--expand_rate_up', type=float, default=1, help="up expand rate for croping images")
+    # parser.add_argument('--expand_rate_down', type=float, default=0.3, help="down expand rate for croping images")
 
     # detect 3DMM
-    parser.add_argument('--emoca_asset_dir', type=str, default='/home/wenchi/zxy/HSD/utils/emoca/assets', help="emoca asset dir")
+    parser.add_argument('--emoca_asset_dir', type=str, default='/home/wenchi/zxy/HSD/utils/emoca/assets', 
+                        help="emoca asset dir")
+    parser.add_argument('--rasterizer_type', default='pytorch3d', type=str, 
+                        help='rasterizer type: pytorch3d or standard' )
+    parser.add_argument('--extractTex', default=True, type=lambda x: x.lower() in ['true', '1'],
+                        help='whether to extract texture from input image as the uv texture map, set false if you want albeo map from FLAME mode' )
 
     # face parse
     parser.add_argument('--face_parse_dir', type=str, default='/home/wenchi/zxy/HSD/utils/face_parse/res/cp/79999_iter.pth', help="face parse cp dir")
@@ -46,13 +52,20 @@ def main():
     args = parser.parse_args()
 
     ### prepare models
-    face_detector = FAN()   # face detect
+    #face_detector = FAN()   # face detect
+    face_detector = SFDDetector(device='cuda')
 
-    asset_dir = args.emoca_asset_dir         # detect 3DMM
-    path_to_models = os.path.join(asset_dir, 'EMOCA', 'models')
-    emoca, conf = load_model(path_to_models, asset_dir, 'EMOCA', 'detail')
-    emoca.cuda()
-    emoca.eval()
+    # asset_dir = args.emoca_asset_dir         # detect 3DMM
+    # path_to_models = os.path.join(asset_dir, 'EMOCA', 'models')
+    # emoca, conf = load_model(path_to_models, asset_dir, 'EMOCA', 'detail')
+    # emoca.cuda()
+    # emoca.eval()
+
+    deca_cfg.model.use_tex = True              # detect 3DMM
+    deca_cfg.rasterizer_type = args.rasterizer_type
+    deca_cfg.model.extract_tex = args.extractTex
+    deca = DECA(config = deca_cfg, device='cuda')
+
 
     n_classes = 19                          # face parse
     face_parse_net = BiSeNet(n_classes=n_classes)
@@ -70,11 +83,6 @@ def main():
 
     ### process data
     folder_names = sorted(os.listdir(args.root_path))
-
-    if args.start_id is not None:                              # resume process
-        start_folder_name = 'n'+args.start_id.zfill(6)
-        start_index = folder_names.index(start_folder_name)
-        folder_names = folder_names[start_index:]
     
     pbar = tqdm(folder_names, 
                  total=len(folder_names),
@@ -88,9 +96,8 @@ def main():
         pbar.set_postfix({"正在处理": folder_name})
 
         folder_path = os.path.join(args.root_path, folder_name)
-        save_folder_path = os.path.join(args.save_root_path, folder_name)
 
-        preprocessAFolder(args, folder_path, save_folder_path, face_detector, emoca, face_parse_net, arcface_model)
+        preprocessAFolder(args, folder_path, face_detector, deca, face_parse_net, arcface_model)
 
 
 if __name__ == '__main__':

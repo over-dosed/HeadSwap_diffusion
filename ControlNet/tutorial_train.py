@@ -9,7 +9,7 @@ from cldm.model import create_model, load_state_dict
 
 # Configs
 resume_path = '/data1/wc_log/zxy/control_sd15_ini.ckpt'
-batch_size = 2
+batch_size = 4
 logger_freq = 300
 learning_rate = 1e-5
 sd_locked = True
