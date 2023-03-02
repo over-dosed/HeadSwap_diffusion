@@ -1,3 +1,7 @@
 .vscode
 test_arcface.jpg
 *.pth
+
+modules/__pycache__
+utils/__pycache__
+utils/*/__pycache__

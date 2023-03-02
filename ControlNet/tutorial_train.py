@@ -8,7 +8,7 @@ from cldm.model import create_model, load_state_dict
 
 
 # Configs
-resume_path = '/data1/wc_log/zxy/control_sd15_ini.ckpt'
+resume_path = './models/control_sd15_ini.ckpt'
 batch_size = 4
 logger_freq = 300
 learning_rate = 1e-5
@@ -28,8 +28,8 @@ model.only_mid_control = only_mid_control
 dataset = MyDataset()
 dataloader = DataLoader(dataset, num_workers=0, batch_size=batch_size, shuffle=True)
 logger = ImageLogger(batch_frequency=logger_freq)
-trainer = pl.Trainer(accelerator='gpu', devices=3, precision=32, callbacks=[logger])
+trainer = pl.Trainer(gpus=1, precision=32, callbacks=[logger])
 
-if __name__ == '__main__':
-    # Train!
-    trainer.fit(model, dataloader)
+
+# Train!
+trainer.fit(model, dataloader)

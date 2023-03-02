@@ -82,8 +82,8 @@ def face_parse(imgs_numpy, net, save_folder_path = None, batch_size = 64):
 
     masks = np.where( (parsing == 0)|(parsing == 14)|(parsing == 16), 0, 255).astype('uint8')  # 0 or 255
     for i in range(masks.shape[0]):
-        mask = cv2.GaussianBlur(masks[i], (19, 19), 20)
-        mask = np.where( (mask < 20), 0, 255).astype('uint8')  # 0 or 255
+        mask = cv2.GaussianBlur(masks[i], (15, 15), 15)
+        mask = np.where( (mask <= 0), 0, 255).astype('uint8')  # 0 or 255
         if save_folder_path is not None:
             cv2.imwrite(os.path.join(save_folder_path, 'mask_'+str(i).zfill(8)+'.jpg'), mask)
 

@@ -77,15 +77,15 @@ def detect_3dmm(bboxlist, imgs_numpy, deca, save_folder_path = None, crop_size=2
             
             if step == 0:
                 for key in codedict:
-                    dict_3DMM[key] = codedict[key]
+                    dict_3DMM[key] = codedict[key].cpu()
                 for key in opdict:
-                    dict_3DMM[key] = opdict[key]
+                    dict_3DMM[key] = opdict[key].cpu()
 
             else:
                 for key in codedict:
-                    dict_3DMM[key] = torch.cat((dict_3DMM[key], codedict[key]))
+                    dict_3DMM[key] = torch.cat((dict_3DMM[key], codedict[key].cpu()))
                 for key in opdict:
-                    dict_3DMM[key] = torch.cat((dict_3DMM[key], opdict[key]))
+                    dict_3DMM[key] = torch.cat((dict_3DMM[key], opdict[key].cpu()))
 
     # print(' ')
     # for key in dict_3DMM:
