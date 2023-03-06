@@ -25,7 +25,7 @@ class Condition_Branch(nn.Module):
         # original_images: tensor, cuda, B*3*512*512, RGB, 0~1
 
         with torch.no_grad():
-
+            tforms = codedict['tforms']
             render_image = self.deca.render_for_hsd(codedict, original_images, tforms)  # (B, 3, 512, 512), tensor, GPU, 0~1
             # render_image = Image.fromarray((reder_image[0].cpu().numpy().transpose(1, 2, 0) * 255).astype('uint8'))
 

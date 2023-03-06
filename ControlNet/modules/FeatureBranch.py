@@ -71,7 +71,7 @@ class Feature_Branch(nn.Module):
             self.load_first_train(arcface_path, resNext_path)
         
 
-    def forward(self, data_for_id, data_for_global, mesh_source, mesh_target):
+    def forward(self, data_for_id, data_for_global, mesh_source = None, mesh_target = None):
         # data_for_id: tensor of shape:(B * 2, 1, 128, 128), -1~1, float32, check for more information: DataPreprocess/getIdInformation.py/process_a_image
         # data_for_global: tensor of shape:(B, 3, 224, 224), 0~1,
         # mesh_source, mesh_target : tensor of shape:(B, 3, 5023)
@@ -108,7 +108,7 @@ class Feature_Branch(nn.Module):
             return feature_2d
         
         else:
-            feature = self.linear(combined_information)
+            feature = self.linear(combined_information).unsqueeze(1)
             return feature
             
     

@@ -55,7 +55,11 @@ def detect_3dmm(bboxlist, imgs_numpy, deca, save_folder_path = None, crop_size=2
         preprocessed_imgs[i, :], tforms[i, :] = preprocess_for_DECA(imgs_numpy[i].copy().transpose(1, 2, 0), bboxlist[i])
 
     dict_3DMM = {}
+    condition_dict_3DMM = {}
+    feature_dict_3DMM = {}
     dict_3DMM['tforms'] = tforms
+    condition_keys = ['tforms', 'shape', 'tex', 'exp', 'pose', 'cam', 'light']
+    feature_keys = ['trans_verts']
 
     with torch.no_grad():
         steps = int(math.ceil(preprocessed_imgs.shape[0] / batch_size))
@@ -91,8 +95,15 @@ def detect_3dmm(bboxlist, imgs_numpy, deca, save_folder_path = None, crop_size=2
     # for key in dict_3DMM:
     #     print(str(key) + '  , shape : ' + str(dict_3DMM[key].shape))
 
+    condition_dict_3DMM = {key:dict_3DMM[key] for key in condition_keys}
+    feature_dict_3DMM = {key:dict_3DMM[key] for key in feature_keys}
+
     if save_folder_path is not None:
         with open(os.path.join(save_folder_path, '3DMM.pkl'), 'wb') as f:
             pickle.dump(dict_3DMM, f)
+        with open(os.path.join(save_folder_path, '3DMM_condition.pkl'), 'wb') as f:
+            pickle.dump(condition_dict_3DMM, f)
+        with open(os.path.join(save_folder_path, '3DMM_feature.pkl'), 'wb') as f:
+            pickle.dump(feature_dict_3DMM, f)
 
     return dict_3DMM

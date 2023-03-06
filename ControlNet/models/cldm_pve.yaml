@@ -1,5 +1,5 @@
 model:
-  target: cldm.cldm.ControlLDM
+  target: cldm.cldm_hsd.ControlLDM_HSD
   params:
     linear_start: 0.00085
     linear_end: 0.0120
