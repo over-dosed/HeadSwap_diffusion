@@ -542,17 +542,26 @@ def tensor2image(tensor):
     image = image.transpose(1,2,0)[:,:,[2,1,0]]
     return image.astype(np.uint8).copy()
 
+class obj(object):
+    def __init__(self, d):
+        for k, v in d.items():
+            if isinstance(k, (list, tuple)):
+                setattr(self, k, [obj(x) if isinstance(x, dict) else x for x in v])
+            else:
+                setattr(self, k, obj(v) if isinstance(v, dict) else v)
 def dict2obj(d):
-    # if isinstance(d, list):
-    #     d = [dict2obj(x) for x in d]
-    if not isinstance(d, dict):
-        return d
-    class C(object):
-        pass
-    o = C()
-    for k in d:
-        o.__dict__[k] = dict2obj(d[k])
-    return o
+    return obj(d)
+# def dict2obj(d):
+#     # if isinstance(d, list):
+#     #     d = [dict2obj(x) for x in d]
+#     if not isinstance(d, dict):
+#         return d
+#     class C(object):
+#         pass
+#     o = C()
+#     for k in d:
+#         o.__dict__[k] = dict2obj(d[k])
+#     return o
 
 class Struct(object):
     def __init__(self, **kwargs):

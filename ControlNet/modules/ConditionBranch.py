@@ -15,7 +15,7 @@ class Condition_Branch(nn.Module):
         deca_cfg.model.use_tex = True             
         deca_cfg.rasterizer_type = 'pytorch3d'  #  help='rasterizer type: pytorch3d or standard' 
         deca_cfg.model.extract_tex = True
-        self.deca = DECA(config = deca_cfg, device= 'cuda')
+        self.deca = DECA(config = deca_cfg, device= 'cuda:0')
         self.deca.eval()
         
 
@@ -25,8 +25,10 @@ class Condition_Branch(nn.Module):
         # original_images: tensor, cuda, B*3*512*512, RGB, 0~1
 
         with torch.no_grad():
-            tforms = codedict['tforms']
-            render_image = self.deca.render_for_hsd(codedict, original_images, tforms)  # (B, 3, 512, 512), tensor, GPU, 0~1
+            for key in codedict:
+                codedict[key] = codedict[key].to(self.deca.device)
+            original_images_device = original_images.to(self.deca.device)
+            render_image = self.deca.render_for_hsd(codedict, original_images_device)  # (B, 3, 512, 512), tensor, GPU, 0~1
             # render_image = Image.fromarray((reder_image[0].cpu().numpy().transpose(1, 2, 0) * 255).astype('uint8'))
 
         return render_image

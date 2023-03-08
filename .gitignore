@@ -5,3 +5,6 @@ test_arcface.jpg
 modules/__pycache__
 utils/__pycache__
 utils/*/__pycache__
+
+image_log/*
+lightning_logs/*

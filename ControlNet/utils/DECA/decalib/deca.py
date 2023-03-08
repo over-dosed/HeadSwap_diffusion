@@ -295,9 +295,18 @@ class DECA(nn.Module):
         }
         return opdict
 
-    def render_for_hsd(self, codedict, original_image=None, tform=None):
+    def render_for_hsd(self, codedict, original_image=None):
         ## codedict: should import shape, exp, pose, tex, cam, light
         ## original_image: tensor, cuda, B*3*512*512, RGB, 0~1
+
+        # no Batch dim, expand dim
+        if original_image.dim() == 3:
+            for key in codedict:
+                codedict[key] = codedict[key].unsqueeze(0)
+            
+            original_image = original_image.unsqueeze(0)
+        
+        tform = codedict['tforms']
         
         ## decode
         verts, landmarks2d, landmarks3d = self.flame(shape_params=codedict['shape'], expression_params=codedict['exp'], pose_params=codedict['pose'])
@@ -315,16 +324,17 @@ class DECA(nn.Module):
 
         ops = self.render(verts, trans_verts, albedo, h=h, w=w, background=background)
         
-        zero_detail_code = torch.zeros((codedict['pose'].shape[0], 128)).cuda()
+        zero_detail_code = torch.zeros((codedict['pose'].shape[0], 128)).to(self.device)
         uv_z = self.D_detail(torch.cat([codedict['pose'][:,3:], codedict['exp'], zero_detail_code], dim=1))
         uv_detail_normals = self.displacement2normal(uv_z, verts, ops['normals'])
         uv_shading = self.render.add_SHlight(uv_detail_normals, codedict['light'])
         uv_texture = albedo*uv_shading
 
         ops_detail = self.render(verts, trans_verts, uv_texture, codedict['light'], h=h, w=w, background=background)
-        render_images = torch.maximum(torch.minimum(ops_detail['images'], torch.ones_like(ops_detail['images'])), torch.zeros_like(ops_detail['images'])) 
+        render_images = torch.maximum(torch.minimum(ops_detail['images'], torch.ones_like(ops_detail['images'])), torch.zeros_like(ops_detail['images']))
+        render_images = render_images.detach().cpu()
 
-        ## 0~1 , B*3*512*512, RGB, tensor, cuda
+        ## 0~1 , B*3*512*512, RGB, tensor, cpu
         return render_images
 
 

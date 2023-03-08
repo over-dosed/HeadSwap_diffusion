@@ -1,14 +1,17 @@
 from share import *
 
 import pytorch_lightning as pl
+from pytorch_lightning.callbacks import ModelCheckpoint
 from torch.utils.data import DataLoader
-from HSD_dataset import HSD_Dataset
+from HSD_dataset import HSD_Dataset_normal
 from cldm.logger import ImageLogger
 from cldm.model import create_model, load_state_dict
 
 
 # Configs
-resume_path = '/data1/wc_log/zxy/control_pbe_ini.ckpt'
+# resume_path = '/data1/wc_log/zxy/control_pbe_ini.ckpt'
+resume_path = '/data1/wc_log/zxy/control_pbe_CLIP_ini.ckpt'
+log_path = '/home/wenchi/zxy/HSD'
 batch_size = 2
 n_gpus = 1
 logger_freq = 300
@@ -21,7 +24,7 @@ root_path = '/data0/wc_data/VFHQ/train'
 
 if __name__ == "__main__":
     # First use cpu to load models. Pytorch Lightning will automatically move it to GPUs.
-    model = create_model('/home/wenchi/zxy/HSD/ControlNet/models/cldm_pve.yaml').cpu()
+    model = create_model('/home/wenchi/zxy/HSD/ControlNet/models/cldm_pve_v2.yaml').cpu()
     model.load_state_dict(load_state_dict(resume_path, location='cpu'))
     model.learning_rate = learning_rate
     model.sd_locked = sd_locked
@@ -29,10 +32,18 @@ if __name__ == "__main__":
 
 
     # Misc
-    dataset = HSD_Dataset(root_path, batch_size)
-    dataloader = DataLoader(dataset, num_workers=0, batch_size=n_gpus, shuffle=True)
-    logger = ImageLogger(batch_frequency=logger_freq)
-    trainer = pl.Trainer(gpus=n_gpus, precision=32, callbacks=[logger])
+    dataset = HSD_Dataset_normal(root_path)
+    dataloader = DataLoader(dataset, num_workers=0, batch_size=batch_size, shuffle=True)
+    logger = ImageLogger(log_path, batch_frequency=logger_freq)
+
+    checkpoint_callback = ModelCheckpoint(
+    save_top_k=2,
+    monitor="global_step",
+    mode="max",
+    dirpath=root_path + "../../ckpt/",
+    filename="sample-mnist-{epoch:02d}-{global_step}",
+)
+    trainer = pl.Trainer(gpus=n_gpus, precision=32, callbacks=[logger, checkpoint_callback])
 
     # Train!
     trainer.fit(model, dataloader)

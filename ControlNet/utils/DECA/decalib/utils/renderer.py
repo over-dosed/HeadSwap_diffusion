@@ -21,6 +21,10 @@ from skimage.io import imread
 import imageio
 from . import util
 
+from pytorch3d.structures import Meshes
+from pytorch3d.io import load_obj
+from pytorch3d.renderer.mesh import rasterize_meshes
+
 def set_rasterizer(type = 'pytorch3d'):
     if type == 'pytorch3d':
         global Meshes, load_obj, rasterize_meshes
