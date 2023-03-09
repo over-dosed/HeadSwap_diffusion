@@ -259,3 +259,112 @@ class HSD_Dataset_normal(Dataset):
             else:
                 loop_count += 1
                 continue
+
+
+class HSD_Dataset_single(Dataset):
+    # this class is the normal way to get a item of a batch
+    # the way up is unnormal way : once get a batch when call getitem()
+    def __init__(self, root_path):
+        
+        clip_names = sorted(os.listdir(root_path))
+        self.data = [os.path.join(root_path, clip_name) for clip_name in clip_names]
+        self.condition_branch = Condition_Branch()
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        # print('start a getitem')
+        clip_path = '/data0/wc_data/VFHQ/test/Clip+2W7Bk7EcRMg+P0+C1+F3663-3770'
+        condition_pkl_path = os.path.join(clip_path, '3DMM_condition.pkl')
+        id_pkl_path = os.path.join(clip_path, 'id.pkl')
+
+        with open(condition_pkl_path, 'rb') as f_condition:
+            data_3dmm = pickle.load(f_condition)
+        with open(id_pkl_path, 'rb') as f_id:
+            id_feature = pickle.load(f_id)
+
+        codedict, index = self.get_code_dict(data_3dmm)
+
+        # get images
+        source_image_path = osp.join(clip_path, '{}.png'.format(str(index[0]).zfill(8)))
+        target_image_path = osp.join(clip_path, '{}.png'.format(str(index[1]).zfill(8)))
+        mask_image_path = osp.join(clip_path, 'mask_{}.jpg'.format(str(index[1]).zfill(8)))
+        source_image = Image.open(source_image_path).convert("RGB").resize((224,224))
+        source_tensor = get_tensor_clip()(source_image).to(torch.float16)
+        target_image = np.asarray(Image.open(target_image_path).convert("RGB"))
+        mask_image = np.asarray(Image.open(mask_image_path))
+        id_feature_selected = id_feature[index[0]]
+
+        # get masked images (background)
+        # GaussianBlur again to reduce mask edge serrate
+        mask_image = cv2.GaussianBlur(mask_image, (11, 11), 11)
+        mask_image = np.where( (mask_image <= 0), 0, 255).astype('uint8')
+        bg_image = cv2.bitwise_and(target_image, target_image, mask = 255 - mask_image)
+
+        target_image = (target_image.astype(np.float32) / 127.5 - 1.0).transpose(2, 0, 1)  # Normalize target images to [-1, 1].
+        mask_image = np.expand_dims(mask_image.astype(np.float32) / 255.0, axis=0)
+
+        bg_image = bg_image.astype(np.float32) / 255.0
+        bg_image = torch.from_numpy(bg_image.transpose(2, 0, 1))
+
+        # rendered_images = self.condition_branch(codedict, bg_images).detach().cpu().numpy()
+        rendered_images = self.condition_branch(codedict, bg_image).squeeze(0) # (3, h, w)
+        # print('end a getitem')
+
+        return dict(target=target_image, mask=mask_image, background=bg_image, source_global=source_tensor, source_id=id_feature_selected, hint=rendered_images)
+
+    
+    def get_code_dict(self, code_dict, pose_threshold = 0.02, loop_max_times = 2):
+        # this method get original a clip code_dict as input
+        # return the indexs selected randomly and the corresponding combined code_dict
+
+        tforms = code_dict['tforms']
+        shape_code = code_dict['shape']
+        tex_code = code_dict['tex']
+        exp_code = code_dict['exp']
+        pose_code = code_dict['pose']
+        cam_code = code_dict['cam']
+        light_code = code_dict['light']
+
+        total_num = pose_code.shape[0]
+        index = []
+
+        # use loop_max_times to avoid endless loop
+        loop_count = 0
+
+        while True:
+            a = 13       # a for source
+            b = random.randint(0, total_num-1)       # b for target
+
+            if a == b :
+                continue
+
+            if abs(torch.mean(pose_code[a] - pose_code[b])) >= pose_threshold or loop_count >= loop_max_times:
+
+                # get combined code
+                tforms_new = tforms[b]
+                shape_code_new = shape_code[a]
+                tex_code_new = tex_code[a]
+                exp_code_new = exp_code[b]
+                pose_code_new = pose_code[b]
+                cam_code_new = cam_code[b]
+                light_code_new = light_code[b]
+
+                # get index
+                index = (a, b)
+
+                new_code_dict = {
+                    'tforms':tforms_new,
+                    'shape':shape_code_new,
+                    'tex':tex_code_new,
+                    'exp':exp_code_new,
+                    'pose':pose_code_new,
+                    'cam':cam_code_new,
+                    'light':light_code_new
+                }
+                return new_code_dict, index
+
+            else:
+                loop_count += 1
+                continue

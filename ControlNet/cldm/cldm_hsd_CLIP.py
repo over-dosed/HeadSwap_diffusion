@@ -363,7 +363,7 @@ class ControlLDM_HSD(LatentDiffusion):
         log["reconstruction"] = self.decode_first_stage(z)
         log["control"] = c_cat * 2.0 - 1.0
         # log["conditioning"] = log_txt_as_img((512, 512), batch[self.cond_stage_key], size=16)
-        log["conditioning"] = batch['source_global'][0]
+        log["conditioning"] = batch['source_global']
 
         if plot_diffusion_rows:
             # get diffusion row

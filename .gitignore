@@ -8,3 +8,4 @@ utils/*/__pycache__
 
 image_log/*
 lightning_logs/*
+log_single/*
