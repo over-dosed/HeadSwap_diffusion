@@ -10,8 +10,8 @@ from cldm.model import create_model, load_state_dict
 
 # Configs
 # resume_path = '/data1/wc_log/zxy/control_pbe_ini.ckpt'
-resume_path =  '/data1/wc_log/zxy/ckpt/v2_single_test-epoch=01-global_step=1939.0.ckpt'
-log_path = '/home/wenchi/zxy/HSD/log_single'
+resume_path =  '/data1/wc_log/zxy/ckpt/v2-epoch=61-global_step=60139.0.ckpt'
+log_path = '/home/wenchi/zxy/HSD/image_log/log_v3'
 batch_size = 2
 n_gpus = 1
 logger_freq = 300
@@ -32,7 +32,7 @@ if __name__ == "__main__":
 
 
     # Misc
-    dataset = HSD_Dataset_single(root_path)
+    dataset = HSD_Dataset_normal(root_path)
     dataloader = DataLoader(dataset, num_workers=0, batch_size=batch_size, shuffle=True)
     logger = ImageLogger(log_path, batch_frequency=logger_freq)
 
@@ -41,7 +41,7 @@ if __name__ == "__main__":
     monitor="global_step",
     mode="max",
     dirpath="/data1/wc_log/zxy/ckpt/",
-    filename="v2_single_test-{epoch:02d}-{global_step}",
+    filename="v3-{epoch:02d}-{global_step}",
 )
     trainer = pl.Trainer(gpus=n_gpus, precision=32, callbacks=[logger, checkpoint_callback])
 

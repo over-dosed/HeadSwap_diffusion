@@ -182,7 +182,7 @@ class HSD_Dataset_normal(Dataset):
         target_image_path = osp.join(clip_path, '{}.png'.format(str(index[1]).zfill(8)))
         mask_image_path = osp.join(clip_path, 'mask_{}.jpg'.format(str(index[1]).zfill(8)))
         source_image = Image.open(source_image_path).convert("RGB").resize((224,224))
-        source_tensor = get_tensor_clip()(source_image).to(torch.float16)
+        source_tensor = get_tensor_clip(normalize= False)(source_image).to(torch.float16)
         target_image = np.asarray(Image.open(target_image_path).convert("RGB"))
         mask_image = np.asarray(Image.open(mask_image_path))
         id_feature_selected = id_feature[index[0]]
