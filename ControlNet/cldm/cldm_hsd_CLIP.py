@@ -314,7 +314,6 @@ class ControlLDM_HSD(LatentDiffusion):
         self.only_mid_control = only_mid_control
         self.control_scales = [1.0] * 13
 
-    @torch.no_grad()
     def get_input(self, batch, k, bs=None, *args, **kwargs):
         x, c = super().get_input(batch, self.first_stage_key, *args, **kwargs)
         control = batch[self.control_key]
@@ -421,6 +420,11 @@ class ControlLDM_HSD(LatentDiffusion):
     def configure_optimizers(self):
         lr = self.learning_rate
         params = list(self.control_model.parameters())
+
+        # for train v3.1
+        params += list(self.cond_stage_model.final_ln.parameters())
+        params += list(self.cond_stage_model.mapper.parameters())
+
         if not self.sd_locked:
             params += list(self.model.diffusion_model.output_blocks.parameters())
             params += list(self.model.diffusion_model.out.parameters())

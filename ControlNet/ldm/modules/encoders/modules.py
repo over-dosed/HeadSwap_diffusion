@@ -264,8 +264,10 @@ class FrozenCLIPImageEmbedder_Full(AbstractEncoder):
 
     def freeze(self):
         self.transformer = self.transformer.eval()
-        for param in self.parameters():
+        for param in self.transformer.parameters():
             param.requires_grad = False
+
+        # for train v1.3
         for param in self.mapper.parameters():
             param.requires_grad = True
         for param in self.final_ln.parameters():
