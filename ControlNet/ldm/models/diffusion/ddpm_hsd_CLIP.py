@@ -785,6 +785,7 @@ class LatentDiffusion(DDPM):
 
         return fold, unfold, normalization, weighting
 
+    @torch.no_grad()
     def get_input(self, batch, k, return_first_stage_outputs=False, force_c_encode=True,
                   cond_key=None, return_original_cond=False, bs=None, return_x=False):
         x, inpaint, mask, reference_global, reference_id = super().get_input(batch, k)
