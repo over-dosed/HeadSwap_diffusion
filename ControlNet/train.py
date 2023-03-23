@@ -11,7 +11,7 @@ from cldm.model import create_model, load_state_dict
 # Configs
 model_name = 'v3.2'
 
-resume_path =  '/data1/wc_log/zxy/ckpt/v3-epoch=334-global_step=324949.0.ckpt'
+resume_path =  '/data1/wc_log/zxy/ckpt/v3-epoch=424-global_step=412249.0.ckpt'
 model_cofig_path = '/home/wenchi/zxy/HSD/ControlNet/models/cldm_pve_v2.yaml'
 ckpt_save_path = "/data1/wc_log/zxy/ckpt/"
 root_path = '/data0/wc_data/VFHQ/train'
@@ -38,9 +38,9 @@ if __name__ == "__main__":
 
     # dataset & dataloader
     dataset = HSD_Dataset(root_path)
-    cross_dataset = HSD_Dataset_cross(cross_root_path, lenth = 5)
-    dataloader = DataLoader(dataset, num_workers=0, batch_size=batch_size, shuffle=True)
-    cross_dataloader = DataLoader(cross_dataset, num_workers=0, batch_size=batch_size, shuffle=True)
+    cross_dataset = HSD_Dataset_cross(cross_root_path, lenth = 6)
+    dataloader = DataLoader(dataset, num_workers=0, batch_size=batch_size, shuffle=True, drop_last=True)
+    cross_dataloader = DataLoader(cross_dataset, num_workers=0, batch_size=batch_size, shuffle=True, drop_last=True)
 
     # callbacks
     logger = ImageLogger(log_path, batch_frequency=logger_freq)
@@ -56,4 +56,4 @@ if __name__ == "__main__":
     trainer = pl.Trainer(gpus=n_gpus, precision=32, callbacks=[logger, checkpoint_callback])
 
     # Train!
-    trainer.fit(model, dataloader, cross_dataloader)
+    trainer.fit(model, dataloader, cross_dataloader, ckpt_path=resume_path)

@@ -24,10 +24,15 @@ def get_tensor_clip(normalize=True, toTensor=True):
                                                 (0.26862954, 0.26130258, 0.27577711))]
     return torchvision.transforms.Compose(transform_list)\
 
-def smooth_mask(mask_image):
+def smooth_expand_mask(mask_image, ksize=None, sigmaX= None, sigmaY= None):
     # need to be applied in data preprocess, and drop this
-    # GaussianBlur again to reduce mask edge serrate
-    mask_image = cv2.GaussianBlur(mask_image, (11, 11), 11)
+    # GaussianBlur again to reduce mask edge serrateimport random
+    if ksize is None or sigmaX is None or sigmaY is None:
+        random_int = random.sample(range(-10, 30), 4)
+        ksize=(33 + random_int[0]*2, 33 + random_int[1]*2)
+        sigmaX= 43 + random_int[2]*2
+        sigmaY= 43 + random_int[3]*2
+    mask_image = cv2.GaussianBlur(mask_image, ksize, sigmaX=sigmaX, sigmaY = sigmaY)
     mask_image = np.where( (mask_image <= 0), 0, 255).astype('uint8')
     return mask_image
 
@@ -104,14 +109,14 @@ class HSD_Dataset(Dataset):
         target_mask_image = np.asarray(Image.open(target_mask_path))
 
         # smooth masks (will be droped)
-        source_mask_image = smooth_mask(source_mask_image)
-        target_mask_image = smooth_mask(target_mask_image)
+        source_mask_image = smooth_expand_mask(source_mask_image, ksize=(11, 11), sigmaX=11, sigmaY=11)
+        target_mask_image = smooth_expand_mask(target_mask_image)
 
         # process source image
         source_image = cv2.bitwise_and(source_image, source_image, mask = source_mask_image) # get masked
         bbox = mask_find_bbox(source_mask_image)
         source_image = get_align_image(bbox=bbox, img=source_image) # get align & resized source image, (224, 224, 3), numpy, 0~255
-        source_tensor = get_tensor_clip()(source_image).to(torch.float16)
+        source_tensor = get_tensor_clip()(source_image.copy()).to(torch.float16)
 
         id_feature_selected = id_feature[index[0]]
 
@@ -238,14 +243,14 @@ class HSD_Dataset_cross(Dataset):
         target_mask_image = np.asarray(Image.open(target_mask_path))
 
         # smooth masks (will be droped)
-        source_mask_image = smooth_mask(source_mask_image)
-        target_mask_image = smooth_mask(target_mask_image)
+        source_mask_image = smooth_expand_mask(source_mask_image, ksize=(11, 11), sigmaX=11, sigmaY=11)
+        target_mask_image = smooth_expand_mask(target_mask_image, ksize=(55, 55), sigmaX=33, sigmaY=33)
 
         # process source image
         source_image = cv2.bitwise_and(source_image, source_image, mask = source_mask_image) # get masked
         bbox = mask_find_bbox(source_mask_image)
         source_image = get_align_image(bbox=bbox, img=source_image) # get align & resized source image, (224, 224, 3), numpy, 0~255
-        source_tensor = get_tensor_clip()(source_image).to(torch.float16)
+        source_tensor = get_tensor_clip()(source_image.copy()).to(torch.float16)
 
         id_feature_selected = id_feature[index[0]]
 
@@ -327,7 +332,7 @@ class HSD_Dataset_single(Dataset):
         target_image_path = osp.join(clip_path, '{}.png'.format(str(index[1]).zfill(8)))
         mask_image_path = osp.join(clip_path, 'mask_{}.jpg'.format(str(index[1]).zfill(8)))
         source_image = Image.open(source_image_path).convert("RGB").resize((224,224))
-        source_tensor = get_tensor_clip()(source_image).to(torch.float16)
+        source_tensor = get_tensor_clip()(source_image.copy()).to(torch.float16)
         target_image = np.asarray(Image.open(target_image_path).convert("RGB"))
         mask_image = np.asarray(Image.open(mask_image_path))
         id_feature_selected = id_feature[index[0]]

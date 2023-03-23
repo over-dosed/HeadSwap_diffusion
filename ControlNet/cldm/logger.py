@@ -33,17 +33,20 @@ class ImageLogger(Callback):
         grid_list = []
         for k in keys:
             B = images[k].shape[0]
-            grid = torchvision.utils.make_grid(images[k], nrow=4)
+            grid = torchvision.utils.make_grid(images[k], nrow=1)
             if self.rescale:
                 grid = (grid + 1.0) / 2.0  # -1,1 -> 0,1; c,h,w
             grid = grid.transpose(0, 1).transpose(1, 2).squeeze(-1)
             grid = grid.numpy()
             grid = (grid * 255).astype(np.uint8) # H, W*B, 3
             if images[k].shape[2] != img_size:
-                grid = np.asarray(Image.fromarray(grid).resize(((img_size + 2 * (B + 1)), img_size + 4)))
+                if B == 1:
+                    grid = np.asarray(Image.fromarray(grid).resize((img_size, img_size)))
+                else:
+                    grid = np.asarray(Image.fromarray(grid).resize((img_size + 4, (img_size * B + 2 * (B + 1)))))   
             grid_list.append(grid)
 
-        full_grid = np.concatenate(grid_list, axis=0)
+        full_grid = np.concatenate(grid_list, axis=1)
 
         filename = "gs-{:06}_e-{:06}_b-{:06}.png".format(global_step, current_epoch, batch_idx)
         path = os.path.join(root, filename)
@@ -64,6 +67,7 @@ class ImageLogger(Callback):
 
             with torch.no_grad():
                 images = pl_module.log_images(batch, split=split, **self.log_images_kwargs)
+                images['d_background'] = batch['background']
 
             for k in images:
                 N = min(images[k].shape[0], self.max_images)
