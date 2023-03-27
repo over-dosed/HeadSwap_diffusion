@@ -9,9 +9,9 @@ from cldm.model import create_model, load_state_dict
 
 
 # Configs
-model_name = 'v3.2'
+model_name = 'v3.4'
 
-resume_path =  '/data1/wc_log/zxy/ckpt/v3-epoch=424-global_step=412249.0.ckpt'
+resume_path =  '/data1/wc_log/zxy/ckpt/v3.3-epoch=352-global_step=684819.0.ckpt'
 model_cofig_path = '/home/wenchi/zxy/HSD/ControlNet/models/cldm_pve_v2.yaml'
 ckpt_save_path = "/data1/wc_log/zxy/ckpt/"
 root_path = '/data0/wc_data/VFHQ/train'
@@ -21,10 +21,13 @@ batch_size = 2
 n_gpus = 1
 logger_freq = 300
 learning_rate = 1e-5
-sd_locked = True
+sd_locked = False
 only_mid_control = False
 
 log_path = '/home/wenchi/zxy/HSD/image_log/log_{}/'.format(model_name)
+
+# arcface model path
+arcface_model_path = '/home/wenchi/zxy/HSD/ControlNet/utils/arcface_pytorch/checkpoints/resnet18_110_onecard.pth'
 
 
 if __name__ == "__main__":
@@ -43,7 +46,7 @@ if __name__ == "__main__":
     cross_dataloader = DataLoader(cross_dataset, num_workers=0, batch_size=batch_size, shuffle=True, drop_last=True)
 
     # callbacks
-    logger = ImageLogger(log_path, batch_frequency=logger_freq)
+    logger = ImageLogger(log_path, batch_frequency=logger_freq, arcface_model_path=arcface_model_path, ddim_steps=75)
 
     checkpoint_callback = ModelCheckpoint(
     save_top_k=2,

@@ -412,7 +412,8 @@ class ControlLDM_HSD(LatentDiffusion):
                                              rest=z[:,4:,:,:]
                                              )
             x_samples_cfg = self.decode_first_stage(samples_cfg)
-            log[f"samples_cfg_scale_{unconditional_guidance_scale:.2f}"] = x_samples_cfg
+            # log[f"samples_cfg_scale_{unconditional_guidance_scale:.2f}"] = x_samples_cfg
+            log["samples_cfg_scale"] = x_samples_cfg
 
         return log
 

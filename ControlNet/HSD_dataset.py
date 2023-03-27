@@ -25,15 +25,38 @@ def get_tensor_clip(normalize=True, toTensor=True):
     return torchvision.transforms.Compose(transform_list)\
 
 def smooth_expand_mask(mask_image, ksize=None, sigmaX= None, sigmaY= None):
-    # need to be applied in data preprocess, and drop this
-    # GaussianBlur again to reduce mask edge serrateimport random
+    # GaussianBlur to reduce mask edge serrateimport random
+    # GaussianBlur to enlarge mask
     if ksize is None or sigmaX is None or sigmaY is None:
-        random_int = random.sample(range(-10, 30), 4)
+        random_int = random.sample(range(-15, 20), 4)
         ksize=(33 + random_int[0]*2, 33 + random_int[1]*2)
         sigmaX= 43 + random_int[2]*2
         sigmaY= 43 + random_int[3]*2
     mask_image = cv2.GaussianBlur(mask_image, ksize, sigmaX=sigmaX, sigmaY = sigmaY)
     mask_image = np.where( (mask_image <= 0), 0, 255).astype('uint8')
+    return mask_image
+
+def random_shape_mask(mask_image, random_point_nums = 50):
+    enlarged_box = mask_find_bbox(mask_image)
+
+    x_coords = np.random.randint(enlarged_box[0], enlarged_box[2], (random_point_nums, 1))
+    y_coords = np.random.randint(enlarged_box[1], enlarged_box[3], (random_point_nums, 1))
+    points = np.concatenate([x_coords, y_coords], axis= 1)
+
+    # filter points that out of original mask
+    pixel_values = mask_image[x_coords, y_coords]
+    mask = np.concatenate([pixel_values == 0, pixel_values == 0], axis= 1)
+    black_points = points[mask]
+    black_points = np.reshape(black_points, (-1, 2))
+
+    # get the convexHull of points
+    hull = cv2.convexHull(black_points)
+
+    try:
+        cv2.fillPoly(mask_image, [hull], 255)
+    except cv2.error as e:
+        pass
+
     return mask_image
 
 def mask_find_bbox(mask):
@@ -108,9 +131,10 @@ class HSD_Dataset(Dataset):
         source_mask_image = np.asarray(Image.open(source_mask_path))
         target_mask_image = np.asarray(Image.open(target_mask_path))
 
-        # smooth masks (will be droped)
+        # smooth and enlarge masks
         source_mask_image = smooth_expand_mask(source_mask_image, ksize=(11, 11), sigmaX=11, sigmaY=11)
         target_mask_image = smooth_expand_mask(target_mask_image)
+        target_mask_image = random_shape_mask(target_mask_image)
 
         # process source image
         source_image = cv2.bitwise_and(source_image, source_image, mask = source_mask_image) # get masked
@@ -242,9 +266,9 @@ class HSD_Dataset_cross(Dataset):
         source_mask_image = np.asarray(Image.open(source_mask_path))
         target_mask_image = np.asarray(Image.open(target_mask_path))
 
-        # smooth masks (will be droped)
+        # smooth and enlarge masks
         source_mask_image = smooth_expand_mask(source_mask_image, ksize=(11, 11), sigmaX=11, sigmaY=11)
-        target_mask_image = smooth_expand_mask(target_mask_image, ksize=(55, 55), sigmaX=33, sigmaY=33)
+        target_mask_image = smooth_expand_mask(target_mask_image, ksize=(77, 77), sigmaX=33, sigmaY=33)
 
         # process source image
         source_image = cv2.bitwise_and(source_image, source_image, mask = source_mask_image) # get masked
@@ -258,6 +282,7 @@ class HSD_Dataset_cross(Dataset):
         bg_image = cv2.bitwise_and(target_image, target_image, mask = 255 - target_mask_image)
 
         target_image = (target_image.astype(np.float32) / 127.5 - 1.0).transpose(2, 0, 1)  # Normalize target images to [-1, 1].
+        source_image = (source_image.astype(np.float32) / 127.5 - 1.0).transpose(2, 0, 1)  # Normalize source images to [-1, 1].
         target_mask_image = np.expand_dims(target_mask_image.astype(np.float32) / 255.0, axis=0)
 
         bg_image = bg_image.astype(np.float32) / 255.0
@@ -267,7 +292,7 @@ class HSD_Dataset_cross(Dataset):
         rendered_images = self.condition_branch(codedict).squeeze(0) # (3, h, w)
         # print('end a getitem')
 
-        return dict(target=target_image, mask=target_mask_image, background=bg_image, source_global=source_tensor, source_id=id_feature_selected, hint=rendered_images)
+        return dict(target=target_image, mask=target_mask_image, background=bg_image, source_global=source_tensor, source_id=id_feature_selected, source_image=source_image, hint=rendered_images)
 
     
     def get_code_dict(self, source_data_3dmm, target_data_3dmm):
