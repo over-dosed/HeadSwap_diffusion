@@ -471,7 +471,7 @@ class DDPM(pl.LightningModule):
         return loss
 
     @torch.no_grad()
-    def validation_step(self, batch, batch_idx):
+    def validation_step(self, batch, batch_idx, dataset_idx):
         _, loss_dict_no_ema = self.shared_step(batch)
         with self.ema_scope():
             _, loss_dict_ema = self.shared_step(batch)
@@ -684,9 +684,9 @@ class LatentDiffusion(DDPM):
 
     def get_learned_conditioning(self, c, cond_key = None):
         if self.cond_stage_forward is None:
-            if cond_key == 'image':
+            if cond_key == 'image' or cond_key == 'image_clip_id':
                 (xc_id, xc_gloabl) = c
-                c = self.cond_stage_model(xc_id, xc_gloabl)
+                c = self.cond_stage_model(xc_gloabl, xc_id)
                 return c
             if hasattr(self.cond_stage_model, 'encode') and callable(self.cond_stage_model.encode):              
                 c = self.cond_stage_model.encode(c)
@@ -788,7 +788,7 @@ class LatentDiffusion(DDPM):
 
         return fold, unfold, normalization, weighting
 
-    @torch.no_grad()
+    # @torch.no_grad()
     def get_input(self, batch, k, return_first_stage_outputs=False, force_c_encode=True,
                   cond_key=None, return_original_cond=False, bs=None, return_x=False):
         x, inpaint, mask, reference_global, reference_id = super().get_input(batch, k)
@@ -812,7 +812,7 @@ class LatentDiffusion(DDPM):
             if cond_key != self.first_stage_key:
                 if cond_key in ['txt','caption', 'coordinates_bbox']:
                     xc = batch[cond_key]
-                elif cond_key == 'image':
+                elif cond_key == 'image' or cond_key == 'image_clip_id':
                     xc_gloabl, xc_id = reference_global, reference_id
                 elif cond_key == 'image_clip':
                     xc = reference_global
@@ -823,8 +823,9 @@ class LatentDiffusion(DDPM):
             else:
                 xc = x
             if not self.cond_stage_trainable or force_c_encode:
-                if cond_key == 'image':
+                if cond_key == 'image' or cond_key == 'image_clip_id':
                     c = self.get_learned_conditioning((xc_id.to(self.device), xc_gloabl.to(self.device)), cond_key)
+                    c = self.proj_out(c)
                     c = c.float()
                 elif isinstance(xc, dict) or isinstance(xc, list):
                     # import pudb; pudb.set_trace()

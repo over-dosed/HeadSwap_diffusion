@@ -7,6 +7,15 @@ from transformers import T5Tokenizer, T5EncoderModel, CLIPTokenizer, CLIPTextMod
 import open_clip
 from ldm.util import default, count_params
 
+from ldm.modules.attention import SpatialTransformer
+from ldm.modules.diffusionmodules.openaimodel import TimestepEmbedSequential
+from ldm.modules.diffusionmodules.util import (
+    conv_nd,
+    linear,
+    zero_module,
+    timestep_embedding,
+)
+
 from .xf import LayerNorm, Transformer
 
 
@@ -246,6 +255,64 @@ class FrozenCLIPImageEmbedder(AbstractEncoder):
 
     def encode(self, image):
         return self(image)
+    
+class FrozenCLIPImageEmbedder_id(AbstractEncoder):
+    """Uses the CLIP transformer encoder for text (from Hugging Face)"""
+    def __init__(self, version="openai/clip-vit-large-patch14"):
+        super().__init__()
+        self.transformer = CLIPVisionModel.from_pretrained(version)
+        self.final_ln = LayerNorm(1024)
+        self.mapper = Transformer(
+                1,
+                1024,
+                5,
+                1,
+            )
+
+        layers = []
+        layers.append(SpatialTransformer(1024, 8, 128, depth=1, context_dim=1024,
+                                        disable_self_attn=False, use_linear=True,
+                                        use_checkpoint=False))
+        layers.append(SpatialTransformer(1024, 8, 128, depth=1, context_dim=1024,
+                                        disable_self_attn=False, use_linear=True,
+                                        use_checkpoint=False))
+        layers.append(zero_module(conv_nd(2, 1024, 1024, 1, padding=0)))
+        self.id_residual = TimestepEmbedSequential(*layers)
+
+        self.freeze()
+
+    def freeze(self):
+        self.transformer = self.transformer.eval()
+        for param in self.parameters():
+            param.requires_grad = False
+        for param in self.mapper.parameters():
+            param.requires_grad = True
+        for param in self.final_ln.parameters():
+            param.requires_grad = True
+        for param in self.id_residual.parameters():
+            param.requires_grad = True
+
+    def forward(self, image, id_feature):
+
+        with torch.no_grad():
+            outputs = self.transformer(pixel_values=image)
+            z = outputs.pooler_output
+            B, _ = z.shape
+
+            z = z.unsqueeze(1)
+        z = self.mapper(z)  ## z : (B, 1, 1024)
+
+        z = z.view(B, -1, 1, 1)
+        z_residual = self.id_residual(z.clone(), id_feature) # id_feature: (B, 1, 1024), z_residual: (B, 1024, 1, 1)
+        z += z_residual
+
+        z = z.view(B, 1, -1)
+        z = self.final_ln(z)
+        
+        return z
+
+    def encode(self, image, id_feature):
+        return self(image, id_feature)
     
 class FrozenCLIPImageEmbedder_Full(AbstractEncoder):
     """Uses the CLIP transformer encoder for text (from Hugging Face)"""
