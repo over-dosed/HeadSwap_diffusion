@@ -825,7 +825,8 @@ class LatentDiffusion(DDPM):
             if not self.cond_stage_trainable or force_c_encode:
                 if cond_key == 'image' or cond_key == 'image_clip_id':
                     c = self.get_learned_conditioning((xc_id.to(self.device), xc_gloabl.to(self.device)), cond_key)
-                    c = self.proj_out(c)
+                    if cond_key == 'image_clip_id':
+                        c = self.proj_out(c)
                     c = c.float()
                 elif isinstance(xc, dict) or isinstance(xc, list):
                     # import pudb; pudb.set_trace()

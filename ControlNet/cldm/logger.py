@@ -90,13 +90,16 @@ class ImageLogger(Callback):
 
         preprocessed_batch = []
         for i in range(len(output_batch)):
-            BBox = output_batch[i][0].astype('int32')
-            img = img_batch[i].numpy().astype('uint8')
-
-            img = self.process_a_image(BBox, img)
-            preprocessed_batch.append(img)
+            if len(output_batch[i]) == 0:
+                # detect no face, return zero image
+                preprocessed_batch.append(np.zeros((2, 1, 128, 128)).astype(np.float32))
+            else:
+                BBox = output_batch[i][0].astype('int32')
+                img = img_batch[i].numpy().astype('uint8')
+                img = self.process_a_image(BBox, img)
+                preprocessed_batch.append(img)
         preprocessed_batch = np.concatenate(preprocessed_batch, axis=0) # preprocessed_batch : (B*2, 1, 128, 128)
-        preprocessed_batch = torch.from_numpy(preprocessed_batch)
+        preprocessed_batch = torch.from_numpy(preprocessed_batch).float()
 
         output_batch = self.arcface_model(preprocessed_batch)
         fe_1 = output_batch[::2]
@@ -195,8 +198,8 @@ class ImageLogger(Callback):
             # id loss calculate & draw for cross_id
             source_image = batch['source_image'].detach().cpu()
 
-            id_loss_samples = self.get_id_loss(source_image.clone(), images['samples'])
-            id_loss_cfg = self.get_id_loss(source_image.clone(), images['samples_cfg_scale'])
+            id_loss_samples = self.get_id_loss(source_image[:N].clone(), images['samples'])
+            id_loss_cfg = self.get_id_loss(source_image[:N].clone(), images['samples_cfg_scale'])
 
             if split == 'train':
                 id_loss_dict = {'id_samples_train':id_loss_samples.mean(), 'id_samples_cfg_train':id_loss_cfg.mean()}

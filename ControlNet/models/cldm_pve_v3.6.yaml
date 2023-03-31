@@ -7,7 +7,7 @@ model:
     log_every_t: 200
     timesteps: 1000
     first_stage_key: "inpaint"
-    cond_stage_key: "image_clip"
+    cond_stage_key: "image"
     control_key: "hint"
     image_size: 64
     channels: 4
@@ -76,6 +76,6 @@ model:
           target: torch.nn.Identity
 
     cond_stage_config:
-      target: ldm.modules.encoders.modules.FrozenCLIPImageEmbedder_Full
+      target: modules.FeatureBranch.Feature_Branch
 
 
