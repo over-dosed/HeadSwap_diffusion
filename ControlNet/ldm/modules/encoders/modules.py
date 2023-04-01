@@ -266,30 +266,33 @@ class FrozenCLIPImageEmbedder_id(AbstractEncoder):
                 1,
                 1024,
                 5,
-                1,
+                8,
             )
 
-        layers = []
-        layers.append(SpatialTransformer(1024, 8, 128, depth=1, context_dim=1024,
-                                        disable_self_attn=False, use_linear=True,
-                                        use_checkpoint=False))
-        layers.append(SpatialTransformer(1024, 8, 128, depth=1, context_dim=1024,
-                                        disable_self_attn=False, use_linear=True,
-                                        use_checkpoint=False))
-        layers.append(zero_module(conv_nd(2, 1024, 1024, 1, padding=0)))
-        self.id_residual = TimestepEmbedSequential(*layers)
+        # global residual (add to id feature)
+        self.id_residual_ST1 = SpatialTransformer(1024, 8, 128, depth=1, context_dim=1024, 
+                               disable_self_attn=False, use_linear=True, 
+                               use_checkpoint=False)
+        self.id_residual_ST2 = SpatialTransformer(1024, 8, 128, depth=1, context_dim=1024, 
+                               disable_self_attn=False, use_linear=True, 
+                               use_checkpoint=False)
+        self.id_residual_conv = zero_module(conv_nd(2, 1024, 1024, 1, padding=0))
 
         self.freeze()
 
     def freeze(self):
         self.transformer = self.transformer.eval()
-        for param in self.parameters():
+        for param in self.transformer.parameters():
             param.requires_grad = False
         for param in self.mapper.parameters():
             param.requires_grad = True
         for param in self.final_ln.parameters():
             param.requires_grad = True
-        for param in self.id_residual.parameters():
+        for param in self.id_residual_ST1.parameters():
+            param.requires_grad = True
+        for param in self.id_residual_ST2.parameters():
+            param.requires_grad = True
+        for param in self.id_residual_conv.parameters():
             param.requires_grad = True
 
     def forward(self, image, id_feature):
@@ -303,10 +306,16 @@ class FrozenCLIPImageEmbedder_id(AbstractEncoder):
         z = self.mapper(z)  ## z : (B, 1, 1024)
 
         z = z.view(B, -1, 1, 1)
-        z_residual = self.id_residual(z.clone(), id_feature) # id_feature: (B, 1, 1024), z_residual: (B, 1024, 1, 1)
-        z += z_residual
 
-        z = z.view(B, 1, -1)
+        id_feature = id_feature.unsqueeze(1) # id_feature: (B, 1, 1024)
+
+        id_residual = self.id_residual_ST1(z, id_feature) # id_residual: (B, 1024, 1, 1)
+        id_residual = self.id_residual_ST2(id_residual, id_feature) # id_residual: (B, 1024, 1, 1)
+        id_residual = self.id_residual_conv(id_residual) # id_residual: (B, 1024, 1, 1)
+
+        z =  z + id_residual
+
+        z = z.view(B, 1, -1) # z: (B, 1, 1024)
         z = self.final_ln(z)
         
         return z

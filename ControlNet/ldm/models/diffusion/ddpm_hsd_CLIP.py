@@ -864,7 +864,7 @@ class LatentDiffusion(DDPM):
             out.append(xc)
         return out
 
-    @torch.no_grad()
+    # @torch.no_grad()
     def decode_first_stage(self, z, predict_cids=False, force_not_quantize=False):
         if predict_cids:
             if z.dim() == 4:

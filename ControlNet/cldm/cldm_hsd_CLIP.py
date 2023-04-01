@@ -15,8 +15,10 @@ from torchvision.utils import make_grid
 from ldm.modules.attention import SpatialTransformer
 from ldm.modules.diffusionmodules.openaimodel import UNetModel, TimestepEmbedSequential, ResBlock, Downsample, AttentionBlock
 from ldm.models.diffusion.ddpm_hsd_CLIP import LatentDiffusion
-from ldm.util import log_txt_as_img, exists, instantiate_from_config
+from ldm.util import log_txt_as_img, exists, instantiate_from_config, default
 from ldm.models.diffusion.ddim_hsd import DDIMSampler
+
+from utils.id_loss import ID_loss
 
 
 class ControlledUnetModel(UNetModel):
@@ -307,12 +309,16 @@ class ControlNet(nn.Module):
 
 class ControlLDM_HSD(LatentDiffusion):
 
-    def __init__(self, control_stage_config, control_key, only_mid_control, *args, **kwargs):
+    def __init__(self, control_stage_config, control_key, only_mid_control, arcface_model_path, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.control_model = instantiate_from_config(control_stage_config)
         self.control_key = control_key
         self.only_mid_control = only_mid_control
         self.control_scales = [1.0] * 13
+
+        # ID_loss model
+        self.ID_loss = None
+        self.arcface_model_path = arcface_model_path
 
     # @torch.no_grad()
     def get_input(self, batch, k, bs=None, *args, **kwargs):
@@ -339,6 +345,87 @@ class ControlLDM_HSD(LatentDiffusion):
             eps = diffusion_model(x=x_noisy, timesteps=t, context=cond_txt, control=control, only_mid_control=self.only_mid_control)
 
         return eps
+    
+    def check_id_loss(self):
+        if self.ID_loss is None:
+            self.ID_loss = ID_loss(device=self.device, arcface_model_path=self.arcface_model_path)
+        return
+    
+    def shared_step(self, batch, **kwargs):
+        # print('start a step')
+        self.check_id_loss()
+        x, c = self.get_input(batch, self.first_stage_key)
+        id_gt = batch['source_id'].detach().clone()
+        id_gt = id_gt.to(memory_format=torch.contiguous_format).float()
+        del batch
+        torch.cuda.empty_cache()
+        # global loss
+        loss = self(x, c, id_gt = id_gt.to(self.device))
+        # print('end a step')
+
+        return loss
+    
+    def p_losses(self, x_start, cond, t, id_gt, noise=None):
+        if self.first_stage_key == 'inpaint':
+            # x_start=x_start[:,:4,:,:]
+            noise = default(noise, lambda: torch.randn_like(x_start[:,:4,:,:]))
+            x_noisy = self.q_sample(x_start=x_start[:,:4,:,:], t=t, noise=noise)
+            x_noisy = torch.cat((x_noisy,x_start[:,4:,:,:]),dim=1)
+        else:
+            noise = default(noise, lambda: torch.randn_like(x_start))
+            x_noisy = self.q_sample(x_start=x_start, t=t, noise=noise)
+        model_output = self.apply_model(x_noisy, t, cond)
+
+        loss_dict = {}
+        prefix = 'train' if self.training else 'val'
+
+        if self.parameterization == "x0":
+            target = x_start
+        elif self.parameterization == "eps":
+            target = noise
+        elif self.parameterization == "v":
+            target = self.get_v(x_start, noise, t)
+        else:
+            raise NotImplementedError()
+
+        # get eps loss
+        loss_simple = self.get_loss(model_output, target, mean=False).mean([1, 2, 3])
+        loss_dict.update({f'{prefix}/loss_simple': loss_simple.mean().data})
+
+        # get id loss
+
+        # predicted_x0 = self.predict_start_from_noise(x_noisy[:,:4,:,:], t, model_output) # predicted x0
+        # recon_x0 = self.decode_first_stage(predicted_x0) # decode x0, get reconstructed x0: (B, 3, H, W), -1~1
+        # id_loss = self.ID_loss(id_gt, recon_x0).mean() # get id loss
+
+        # del predicted_x0
+        # del recon_x0
+        torch.cuda.empty_cache()
+
+        # loss_dict.update({f'{prefix}/loss_id': id_loss.data})
+
+        logvar_t = self.logvar[t].to(self.device)
+        loss = loss_simple / torch.exp(logvar_t) + logvar_t
+        # loss = loss_simple / torch.exp(self.logvar) + self.logvar
+        if self.learn_logvar:
+            loss_dict.update({f'{prefix}/loss_gamma': loss.mean().data})
+            loss_dict.update({'logvar': self.logvar.data.mean().data})
+
+        # loss = self.l_simple_weight * loss.mean() + id_loss.item()
+        loss = self.l_simple_weight * loss.mean()
+
+        loss_vlb = self.get_loss(model_output, target, mean=False).mean(dim=(1, 2, 3))
+        loss_vlb = (self.lvlb_weights[t] * loss_vlb).mean()
+        loss_dict.update({f'{prefix}/loss_vlb': loss_vlb.data})
+        loss += (self.original_elbo_weight * loss_vlb)
+        loss_dict.update({f'{prefix}/loss': loss.data})
+
+        return loss, loss_dict
+
+    def on_train_batch_end(self, batch_end_output, batch, *args, **kwargs):
+        if self.use_ema:
+            self.model_ema(self.model)
+
 
     @torch.no_grad()
     def get_unconditional_conditioning(self, N, cond_key, condition_clip = None):
@@ -371,6 +458,7 @@ class ControlLDM_HSD(LatentDiffusion):
                    use_ema_scope=True, plot_no_condition = True,
                    **kwargs):
         use_ddim = ddim_steps is not None
+        self.check_id_loss()
 
         log = dict()
         z, c = self.get_input(batch, self.first_stage_key, bs=N)
@@ -452,14 +540,16 @@ class ControlLDM_HSD(LatentDiffusion):
         lr = self.learning_rate
         params = list(self.control_model.parameters())
 
-        # # for train v3.5
-        # params += list(self.cond_stage_model.mapper.parameters())
-        # params += list(self.cond_stage_model.id_residual.parameters())
-        # params += list(self.cond_stage_model.final_ln.parameters())
-        # params += list(self.proj_out.parameters())
+        # for train v3.5.1
+        params += list(self.cond_stage_model.mapper.parameters())
+        params += list(self.cond_stage_model.final_ln.parameters())
+        params += list(self.cond_stage_model.id_residual_ST1.parameters())
+        params += list(self.cond_stage_model.id_residual_ST2.parameters())
+        params += list(self.cond_stage_model.id_residual_conv.parameters())
+        params += list(self.proj_out.parameters())
 
-        # # for train v3.6
-        params += list(self.cond_stage_model.parameters())
+        # # # for train v3.6
+        # params += list(self.cond_stage_model.parameters())
 
         if not self.sd_locked:
             params += list(self.model.diffusion_model.output_blocks.parameters())
