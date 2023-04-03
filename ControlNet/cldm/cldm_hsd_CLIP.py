@@ -357,7 +357,7 @@ class ControlLDM_HSD(LatentDiffusion):
     def log_images(self, batch, N=4, n_row=2, sample=True, ddim_steps=50, ddim_eta=0.0, return_keys=None,
                    quantize_denoised=True, inpaint=True, plot_denoise_rows=False, plot_progressive_rows=True,
                    plot_diffusion_rows=False, unconditional_guidance_scale=2.0 , unconditional_guidance_label=None,
-                   use_ema_scope=True,
+                   use_ema_scope=True, plot_no_condition = True,
                    **kwargs):
         use_ddim = ddim_steps is not None
 
@@ -399,6 +399,15 @@ class ControlLDM_HSD(LatentDiffusion):
             if plot_denoise_rows:
                 denoise_grid = self._get_denoise_row_from_list(z_denoise_row)
                 log["denoise_row"] = denoise_grid
+
+        if plot_no_condition:
+            # zero_condtion has the same shape, dtype and devices
+            zero_condition = torch.zeros_like(c, device= c.device)
+            samples, z_denoise_row = self.sample_log(cond={"c_concat": [c_cat], "c_crossattn": [zero_condition]},
+                                                     batch_size=N, ddim=use_ddim,
+                                                     ddim_steps=ddim_steps, eta=ddim_eta, rest=z[:N,4:,:,:])
+            x_samples = self.decode_first_stage(samples)
+            log["s_nocondition"] = x_samples
 
         if unconditional_guidance_scale > 1.0:
             uc_cross = self.get_unconditional_conditioning(N)
