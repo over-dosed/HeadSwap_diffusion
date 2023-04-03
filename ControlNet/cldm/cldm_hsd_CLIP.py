@@ -14,6 +14,7 @@ from einops import rearrange, repeat
 from torchvision.utils import make_grid
 from ldm.modules.attention import SpatialTransformer
 from ldm.modules.diffusionmodules.openaimodel import UNetModel, TimestepEmbedSequential, ResBlock, Downsample, AttentionBlock
+from ldm.modules.distributions.distributions import DiagonalGaussianDistribution
 from ldm.models.diffusion.ddpm_hsd_CLIP import LatentDiffusion
 from ldm.util import log_txt_as_img, exists, instantiate_from_config, default
 from ldm.models.diffusion.ddim_hsd import DDIMSampler
@@ -309,16 +310,20 @@ class ControlNet(nn.Module):
 
 class ControlLDM_HSD(LatentDiffusion):
 
-    def __init__(self, control_stage_config, control_key, only_mid_control, arcface_model_path, *args, **kwargs):
+    def __init__(self, control_stage_config, control_key, only_mid_control, arcface_model_path, first_stage_cuda, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.control_model = instantiate_from_config(control_stage_config)
         self.control_key = control_key
         self.only_mid_control = only_mid_control
         self.control_scales = [1.0] * 13
 
+        # set first stage cuda device
+        self.first_stage_cuda = first_stage_cuda
+
         # ID_loss model
-        self.ID_loss = None
         self.arcface_model_path = arcface_model_path
+        self.ID_loss = ID_loss(device='cuda', arcface_model_path=self.arcface_model_path)
+        
 
     # @torch.no_grad()
     def get_input(self, batch, k, bs=None, *args, **kwargs):
@@ -346,16 +351,47 @@ class ControlLDM_HSD(LatentDiffusion):
 
         return eps
     
-    def check_id_loss(self):
-        if self.ID_loss is None:
-            self.ID_loss = ID_loss(device=self.device, arcface_model_path=self.arcface_model_path)
-        return
+    # @torch.no_grad()
+    def decode_first_stage(self, z, predict_cids=False, force_not_quantize=False):
+        self.first_stage_model.cuda(self.first_stage_cuda)
+        z = z.cuda(self.first_stage_cuda)
+
+        if predict_cids:
+            if z.dim() == 4:
+                z = torch.argmax(z.exp(), dim=1).long()
+            z = self.first_stage_model.quantize.get_codebook_entry(z, shape=None)
+            z = rearrange(z, 'b h w c -> b c h w').contiguous()
+
+        z = 1. / self.scale_factor * z
+
+        if self.first_stage_key=='inpaint':
+            decode_result = self.first_stage_model.decode(z[:,:4,:,:])
+        else:
+            decode_result = self.first_stage_model.decode(z)
+
+        decode_result = decode_result.cuda(0)
+        return decode_result
+
+    @torch.no_grad()
+    def encode_first_stage(self, x):
+        self.first_stage_model.cuda(self.first_stage_cuda)
+        x = x.cuda(self.first_stage_cuda)
+        encode_result = self.first_stage_model.encode(x)
+
+        # do some function that get_first_stage_encoding() usually do
+        if isinstance(encode_result, DiagonalGaussianDistribution):
+            encode_result = encode_result.sample()
+
+        encode_result = encode_result.cuda(0)
+        return encode_result
+    
+    def get_first_stage_encoding(self, encoder_posterior):
+        return self.scale_factor * encoder_posterior
     
     def shared_step(self, batch, **kwargs):
         # print('start a step')
-        self.check_id_loss()
         x, c = self.get_input(batch, self.first_stage_key)
-        id_gt = batch['source_id'].detach().clone()
+        id_gt = batch['target'].detach().clone()
         id_gt = id_gt.to(memory_format=torch.contiguous_format).float()
         del batch
         torch.cuda.empty_cache()
@@ -390,35 +426,34 @@ class ControlLDM_HSD(LatentDiffusion):
 
         # get eps loss
         loss_simple = self.get_loss(model_output, target, mean=False).mean([1, 2, 3])
-        loss_dict.update({f'{prefix}/loss_simple': loss_simple.mean().data})
+        loss_dict.update({f'{prefix}/loss_simple': loss_simple.mean()})
 
         # get id loss
+        predicted_x0 = self.predict_start_from_noise(x_noisy[:,:4,:,:], t, model_output) # predicted x0
+        recon_x0 = self.decode_first_stage(predicted_x0) # decode x0, get reconstructed x0: (B, 3, H, W), -1~1
+        id_loss = self.ID_loss(id_gt, recon_x0).mean() # get id loss
 
-        # predicted_x0 = self.predict_start_from_noise(x_noisy[:,:4,:,:], t, model_output) # predicted x0
-        # recon_x0 = self.decode_first_stage(predicted_x0) # decode x0, get reconstructed x0: (B, 3, H, W), -1~1
-        # id_loss = self.ID_loss(id_gt, recon_x0).mean() # get id loss
-
-        # del predicted_x0
-        # del recon_x0
+        del predicted_x0
+        del recon_x0
         torch.cuda.empty_cache()
 
-        # loss_dict.update({f'{prefix}/loss_id': id_loss.data})
+        loss_dict.update({f'{prefix}/loss_id': id_loss})
 
         logvar_t = self.logvar[t].to(self.device)
         loss = loss_simple / torch.exp(logvar_t) + logvar_t
         # loss = loss_simple / torch.exp(self.logvar) + self.logvar
         if self.learn_logvar:
-            loss_dict.update({f'{prefix}/loss_gamma': loss.mean().data})
-            loss_dict.update({'logvar': self.logvar.data.mean().data})
+            loss_dict.update({f'{prefix}/loss_gamma': loss.mean()})
+            loss_dict.update({'logvar': self.logvar.data.mean()})
 
-        # loss = self.l_simple_weight * loss.mean() + id_loss.item()
-        loss = self.l_simple_weight * loss.mean()
+        loss = self.l_simple_weight * loss.mean() + id_loss
+        # loss = self.l_simple_weight * loss.mean()
 
         loss_vlb = self.get_loss(model_output, target, mean=False).mean(dim=(1, 2, 3))
         loss_vlb = (self.lvlb_weights[t] * loss_vlb).mean()
-        loss_dict.update({f'{prefix}/loss_vlb': loss_vlb.data})
+        loss_dict.update({f'{prefix}/loss_vlb': loss_vlb})
         loss += (self.original_elbo_weight * loss_vlb)
-        loss_dict.update({f'{prefix}/loss': loss.data})
+        loss_dict.update({f'{prefix}/loss': loss})
 
         return loss, loss_dict
 
@@ -454,11 +489,10 @@ class ControlLDM_HSD(LatentDiffusion):
     @torch.no_grad()
     def log_images(self, batch, N=4, n_row=2, sample=True, ddim_steps=50, ddim_eta=0.0, return_keys=None,
                    quantize_denoised=True, inpaint=True, plot_denoise_rows=False, plot_progressive_rows=True,
-                   plot_diffusion_rows=False, unconditional_guidance_scale=3.0 , unconditional_guidance_id=False,
+                   plot_diffusion_rows=False, unconditional_guidance_scale=2.0 , unconditional_guidance_id=False,
                    use_ema_scope=True, plot_no_condition = True,
                    **kwargs):
         use_ddim = ddim_steps is not None
-        self.check_id_loss()
 
         log = dict()
         z, c = self.get_input(batch, self.first_stage_key, bs=N)

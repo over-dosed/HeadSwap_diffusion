@@ -18,7 +18,9 @@ class ID_loss(nn.Module):
     def __init__(self, device, arcface_model_path):
             super().__init__()
 
-            self.face_detector = SFDDetector(device)
+            self.device = device
+
+            self.face_detector = SFDDetector('cuda')
 
             self.arcface_model = resnet_face18(False)   # arcface get id information
             state_dict = torch.load(arcface_model_path)
@@ -63,6 +65,7 @@ class ID_loss(nn.Module):
         ## img_batch: tensor,  (B, 3, size, size), RGB, -1~1
 
         img_batch = (img_batch + 1.0) * 127.5
+        img_batch = img_batch.float()
         with torch.no_grad():
             bbox_batch = self.face_detector.detect_from_batch(img_batch)
 
@@ -70,7 +73,9 @@ class ID_loss(nn.Module):
         for i in range(len(bbox_batch)):
             if len(bbox_batch[i]) == 0:
                 # detect no face, return zero image
-                preprocessed_batch.append(torch.zeros(2, 1, 128, 128))
+                zero_image = torch.zeros(2, 1, 128, 128)
+                zero_image = zero_image.to(self.device)
+                preprocessed_batch.append(zero_image)
             else:
                 BBox = bbox_batch[i][0].astype('int32')
                 img = img_batch[i]
@@ -91,7 +96,9 @@ class ID_loss(nn.Module):
             if len(source_img.shape) == 2:
                 source_id_feature = source_img
             else:
-                source_id_feature = self.get_id_feature(source_img) # (B, 1024)
+                with torch.no_grad():
+                    # source id no need to backprop
+                    source_id_feature = self.get_id_feature(source_img) # (B, 1024)
 
             if len(output_img.shape) == 2:
                 ouput_id_feature = output_img

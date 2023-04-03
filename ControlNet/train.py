@@ -10,13 +10,13 @@ from cldm.model import create_model, load_state_dict
 # Configs
 model_name = 'v3.5.1'
 
-resume_path =  '/data1/wc_log/zxy/ckpt/v3.5.1-begin.ckpt'
+resume_path =  '/data1/wc_log/zxy/ckpt/v3.5.1-epoch=18-global_step=978.0.ckpt'
 model_cofig_path = '/home/wenchi/zxy/HSD/ControlNet/models/cldm_pve_v3.5.yaml'
 ckpt_save_path = "/data1/wc_log/zxy/ckpt/"
 root_path = '/data1/wc_log/zxy/VFHQ/train'
 cross_root_path = '/data1/wc_log/zxy/VFHQ/test'
 
-batch_size = 1
+batch_size = 3
 n_gpus = 1
 logger_freq = 300
 learning_rate = 1e-5
@@ -56,7 +56,7 @@ if __name__ == "__main__":
 )
 
     # trainer = pl.Trainer(gpus=n_gpus, precision=32, callbacks=[logger, checkpoint_callback])
-    trainer = pl.Trainer(gpus=n_gpus, precision=16, callbacks=[checkpoint_callback], accumulate_grad_batches=1)
+    trainer = pl.Trainer(gpus=n_gpus, precision=16, callbacks=[logger, checkpoint_callback], accumulate_grad_batches=8)
 
     # Train!
-    trainer.fit(model, dataloader, [cross_eval_dataloader, cross_test_dataloader])
+    trainer.fit(model, dataloader, [cross_eval_dataloader, cross_test_dataloader], ckpt_path=resume_path)

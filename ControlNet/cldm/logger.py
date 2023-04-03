@@ -102,7 +102,10 @@ class ImageLogger(Callback):
                 N = min(images['d_background'].shape[0], self.max_images)
 
             # id loss calculate & draw for cross_id
-            source_image = batch['source_image']
+            if split == "train":
+                source_image = batch['target']
+            else:
+                source_image = batch['source_image']
 
             id_loss_samples = pl_module.ID_loss(source_image[:N].clone(), images['samples'])
             id_loss_cfg = pl_module.ID_loss(source_image[:N].clone(), images['samples_cfg_scale'])
