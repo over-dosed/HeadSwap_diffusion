@@ -30,7 +30,7 @@ class ID_loss(nn.Module):
             self.arcface_model = self.arcface_model.to(device)
 
             transformer = torch.nn.Sequential(
-                transforms.Resize(size=(128, 128), interpolation=transforms.InterpolationMode.BICUBIC),
+                transforms.Resize(size=(128, 128), interpolation=transforms.InterpolationMode.BICUBIC, antialias=True),
                 transforms.Grayscale(num_output_channels=1),
             )
             self.transformer = torch.jit.script(transformer)

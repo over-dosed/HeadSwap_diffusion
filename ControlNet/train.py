@@ -1,5 +1,6 @@
 from share import *
 
+import torch
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
 from torch.utils.data import DataLoader
@@ -8,9 +9,9 @@ from cldm.logger import ImageLogger
 from cldm.model import create_model, load_state_dict
 
 # Configs
-model_name = 'v3.5.1'
+model_name = 'v3.5.2'
 
-resume_path =  '/data1/wc_log/zxy/ckpt/v3.5.1-epoch=18-global_step=978.0.ckpt'
+resume_path =  '/data1/wc_log/zxy/ckpt/v3.5.2-epoch=20-global_step=1700.0.ckpt'
 model_cofig_path = '/home/wenchi/zxy/HSD/ControlNet/models/cldm_pve_v3.5.yaml'
 ckpt_save_path = "/data1/wc_log/zxy/ckpt/"
 root_path = '/data1/wc_log/zxy/VFHQ/train'
@@ -29,6 +30,14 @@ log_path = '/data1/wc_log/zxy/image_log/log_{}/'.format(model_name)
 if __name__ == "__main__":
     # First use cpu to load models. Pytorch Lightning will automatically move it to GPUs.
     model = create_model(model_cofig_path).cpu()
+
+    # torch 2.0
+    # model.model = torch.compile(model.model)
+    # model.first_stage_model = torch.compile(model.first_stage_model)
+    # model.cond_stage_model = torch.compile(model.cond_stage_model)
+    # model.control_model = torch.compile(model.control_model)
+    # model.ID_loss = torch.compile(model.ID_loss)
+
     model.load_state_dict(load_state_dict(resume_path, location='cpu'))
     model.learning_rate = learning_rate
     model.sd_locked = sd_locked
@@ -59,4 +68,4 @@ if __name__ == "__main__":
     trainer = pl.Trainer(gpus=n_gpus, precision=16, callbacks=[logger, checkpoint_callback], accumulate_grad_batches=8)
 
     # Train!
-    trainer.fit(model, dataloader, [cross_eval_dataloader, cross_test_dataloader], ckpt_path=resume_path)
+    trainer.fit(model, dataloader, [cross_eval_dataloader, cross_test_dataloader],ckpt_path=resume_path)

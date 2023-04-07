@@ -310,7 +310,7 @@ class ControlNet(nn.Module):
 
 class ControlLDM_HSD(LatentDiffusion):
 
-    def __init__(self, control_stage_config, control_key, only_mid_control, arcface_model_path, first_stage_cuda, *args, **kwargs):
+    def __init__(self, control_stage_config, control_key, only_mid_control, l_id_weight, arcface_model_path, first_stage_cuda, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.control_model = instantiate_from_config(control_stage_config)
         self.control_key = control_key
@@ -323,6 +323,9 @@ class ControlLDM_HSD(LatentDiffusion):
         # ID_loss model
         self.arcface_model_path = arcface_model_path
         self.ID_loss = ID_loss(device='cuda', arcface_model_path=self.arcface_model_path)
+
+        # ID_loss weight
+        self.l_id_weight = l_id_weight
         
 
     # @torch.no_grad()
@@ -446,7 +449,8 @@ class ControlLDM_HSD(LatentDiffusion):
             loss_dict.update({f'{prefix}/loss_gamma': loss.mean()})
             loss_dict.update({'logvar': self.logvar.data.mean()})
 
-        loss = self.l_simple_weight * loss.mean() + id_loss
+        # loss = self.l_id_weight * id_loss # test
+        loss = self.l_simple_weight * loss.mean() + self.l_id_weight * id_loss
         # loss = self.l_simple_weight * loss.mean()
 
         loss_vlb = self.get_loss(model_output, target, mean=False).mean(dim=(1, 2, 3))
@@ -574,8 +578,15 @@ class ControlLDM_HSD(LatentDiffusion):
         lr = self.learning_rate
         params = list(self.control_model.parameters())
 
-        # for train v3.5.1
-        params += list(self.cond_stage_model.mapper.parameters())
+        # # for train v3.5.1
+        # params += list(self.cond_stage_model.mapper.parameters())
+        # params += list(self.cond_stage_model.final_ln.parameters())
+        # params += list(self.cond_stage_model.id_residual_ST1.parameters())
+        # params += list(self.cond_stage_model.id_residual_ST2.parameters())
+        # params += list(self.cond_stage_model.id_residual_conv.parameters())
+        # params += list(self.proj_out.parameters())
+
+        # for train v3.5.2
         params += list(self.cond_stage_model.final_ln.parameters())
         params += list(self.cond_stage_model.id_residual_ST1.parameters())
         params += list(self.cond_stage_model.id_residual_ST2.parameters())
