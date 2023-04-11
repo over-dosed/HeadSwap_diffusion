@@ -586,15 +586,16 @@ class ControlLDM_HSD(LatentDiffusion):
         # params += list(self.cond_stage_model.id_residual_conv.parameters())
         # params += list(self.proj_out.parameters())
 
-        # for train v3.5.2
-        params += list(self.cond_stage_model.final_ln.parameters())
-        params += list(self.cond_stage_model.id_residual_ST1.parameters())
-        params += list(self.cond_stage_model.id_residual_ST2.parameters())
-        params += list(self.cond_stage_model.id_residual_conv.parameters())
-        params += list(self.proj_out.parameters())
+        # # for train v3.5.2
+        # params += list(self.cond_stage_model.final_ln.parameters())
+        # params += list(self.cond_stage_model.id_residual_ST1.parameters())
+        # params += list(self.cond_stage_model.id_residual_ST2.parameters())
+        # params += list(self.cond_stage_model.id_residual_conv.parameters())
+        # params += list(self.proj_out.parameters())
 
-        # # # for train v3.6
-        # params += list(self.cond_stage_model.parameters())
+        # for train v3.6
+        params += list(self.cond_stage_model.id_residual_block.parameters())
+        params += list(self.cond_stage_model.final_ln.parameters())
 
         if not self.sd_locked:
             params += list(self.model.diffusion_model.output_blocks.parameters())

@@ -7,7 +7,7 @@ model:
     log_every_t: 200
     timesteps: 1000
     first_stage_key: "inpaint"
-    cond_stage_key: "image"
+    cond_stage_key: "image_clip_id"
     control_key: "hint"
     image_size: 64
     channels: 4
@@ -17,6 +17,8 @@ model:
     scale_factor: 0.18215
     use_ema: False
     only_mid_control: False
+    l_id_weight: 0.01
+    first_stage_cuda: 1
     arcface_model_path: '/home/wenchi/zxy/HSD/ControlNet/utils/arcface_pytorch/checkpoints/resnet18_110_onecard.pth'
 
     control_stage_config:
@@ -77,6 +79,4 @@ model:
           target: torch.nn.Identity
 
     cond_stage_config:
-      target: modules.FeatureBranch.Feature_Branch
-
-
+      target: ldm.modules.encoders.modules.FrozenCLIPImageEmbedder_id_full
