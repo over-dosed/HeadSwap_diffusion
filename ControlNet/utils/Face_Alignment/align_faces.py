@@ -196,6 +196,21 @@ def warp_and_crop_face(src_img,
 
     return face_img
 
+def transfor_M_to_theta(M, H1, W1, H2, W2):
+    # H1 , W1 is the size of the image before transformation
+    # H2 , W2 is the size of the image after transformation
+    # M is the transformation matrix (2, 3)
+    # and this method is to transfor cv2 warpAffine transformation matrix to pytorch affine_grid theta
+    M = np.vstack((M, [0, 0, 1])).T
+    
+    multi_left = np.array([[2.0 / (W1 - 1), 0, -1], [0, 2.0 / (H1 - 1), 0], [0, 0, 1]])
+    multi_right = np.array([[2.0 / (W2 - 1), 0, -1], [0, 2.0 / (H2 - 1), -1], [0, 0, 1]]).T
+
+    theta = np.dot(np.dot(multi_left, M), multi_right)
+
+    return theta
+
+
 # process tensor
 def warp_and_crop_face_tensor(src_img,
                        facial_pts,
@@ -244,7 +259,7 @@ def warp_and_crop_face_tensor(src_img,
     tfm = tform.params[0:2, :]
 
     # convert transformation matrix to PyTorch tensor
-    tfm = torch.from_numpy(tfm).float()
+    tfm = transfor_M_to_theta(tfm).type_as(src_img)
 
     # calculate grid for grid_sample()
     grid = F.affine_grid(tfm.unsqueeze(0), torch.Size([1, 3, crop_size[1], crop_size[0]]))
