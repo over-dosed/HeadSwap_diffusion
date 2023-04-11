@@ -196,17 +196,16 @@ def warp_and_crop_face(src_img,
 
     return face_img
 
-def transfor_M_to_theta(M, H1, W1, H2, W2):
+def transfor_M_to_theta(M, H1, W1):
     # H1 , W1 is the size of the image before transformation
     # H2 , W2 is the size of the image after transformation
     # M is the transformation matrix (2, 3)
     # and this method is to transfor cv2 warpAffine transformation matrix to pytorch affine_grid theta
-    M = np.vstack((M, [0, 0, 1])).T
-    
-    multi_left = np.array([[2.0 / (W1 - 1), 0, -1], [0, 2.0 / (H1 - 1), 0], [0, 0, 1]])
-    multi_right = np.array([[2.0 / (W2 - 1), 0, -1], [0, 2.0 / (H2 - 1), -1], [0, 0, 1]]).T
 
-    theta = np.dot(np.dot(multi_left, M), multi_right)
+    T = np.array([[2 / W1, 0, -1],
+              [0, 2 / H1, -1],
+              [0, 0, 1]])
+    theta = np.linalg.inv(T @ M @ np.linalg.inv(T))
 
     return theta
 
@@ -256,17 +255,23 @@ def warp_and_crop_face_tensor(src_img,
     # calculate transformation matrix
     tform = trans.SimilarityTransform()
     tform.estimate(src_pts, ref_pts)
-    tfm = tform.params[0:2, :]
+    tfm = tform.params
 
     # convert transformation matrix to PyTorch tensor
     h1, w1 = src_img.shape[1], src_img.shape[2]
-    h2, w2 = crop_size[1], crop_size[0]
-    tfm = transfor_M_to_theta(tfm, h1, w1, h2, w2).type_as(src_img)
+    tfm = transfor_M_to_theta(tfm, h1, w1)
+    print(tfm)
+    tfm = torch.from_numpy(tfm[:2, :]).unsqueeze(0).type_as(src_img)
+
 
     # calculate grid for grid_sample()
-    grid = F.affine_grid(tfm.unsqueeze(0), torch.Size([1, 3, crop_size[1], crop_size[0]]))
+    grid = F.affine_grid(tfm, [1, 3, h1, w1], align_corners=True)
 
     # apply grid_sample() to src_img
-    face_img = F.grid_sample(src_img.unsqueeze(0), grid)
+    face_img = F.grid_sample(src_img.unsqueeze(0), grid, align_corners=True)
+
+    # avoid out of boundary
+    face_img = torch.clamp(face_img, 0, 255)
+    face_img = face_img[:, :, :crop_size[1], :crop_size[0]]
 
     return face_img
