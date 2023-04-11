@@ -12,8 +12,6 @@ import torch
 from torch.utils.data import Dataset
 import torchvision
 
-from modules.ConditionBranch import Condition_Branch
-
 def get_tensor_clip(normalize=True, toTensor=True):
     transform_list = []
     if toTensor:
@@ -96,16 +94,46 @@ def get_align_image(bbox, img, reshape_size = 224):
     aligned_img = np.asarray(aligned_img)
     return aligned_img
 
+def render_add_gaze(rendered_image, target_gaze_mask, target_image):
+    # rendered_image : (3, 512, 512), tensor, cpu, 0~1, RGB
+    # target_gaze_mask: (512, 512), numpy, 0 or 255
+    # target_image: (3, 512, 512), numpy, -1~1, RGB
+
+    # get rendered image
+    rendered_image = rendered_image.numpy()
+    rendered_image_transpose = rendered_image.transpose(1, 2, 0) # (512, 512, 3)
+
+    # get gray target image for gaze image
+    target_image_transpose = (target_image.transpose(1, 2, 0) / 2.0) + 0.5 # (512, 512, 3) , 0~1, RGB
+    target_image_gray = cv2.cvtColor(target_image_transpose, cv2.COLOR_RGB2GRAY) #(512, 512)
+    render_minus_gaze = cv2.bitwise_and(rendered_image_transpose, rendered_image_transpose, mask = 255 - target_gaze_mask)
+
+    # get gaze image
+    target_image_gaze = cv2.bitwise_and(target_image_gray, target_image_gray, mask = target_gaze_mask)
+    target_image_gaze = np.expand_dims(target_image_gaze, axis=2)
+    target_image_gaze = np.repeat(target_image_gaze, 3, axis=2)
+
+    render_add_gaze = render_minus_gaze + target_image_gaze
+    render_add_gaze = render_add_gaze.transpose(2, 0, 1) # (3, 512, 512)
+
+    return render_add_gaze
+
 class HSD_Dataset(Dataset):
     # this class is the normal way to get a item of a batch
-    def __init__(self, root_path):
+    def __init__(self, root_path, condition_branch, face_parse_net, flag, lenth = None):
         
         clip_names = sorted(os.listdir(root_path))
         self.data = [os.path.join(root_path, clip_name) for clip_name in clip_names]
-        self.condition_branch = Condition_Branch()
+        self.condition_branch = condition_branch
+        self.face_parse_net = face_parse_net
+        self.flag = flag
+        self.lenth = lenth
 
     def __len__(self):
-        return len(self.data)
+        if self.lenth is None:
+            return len(self.data)
+        else:
+            return self.lenth
 
     def __getitem__(self, idx):
         clip_path = self.data[idx]
@@ -122,14 +150,11 @@ class HSD_Dataset(Dataset):
         # get images paths
         source_image_path = osp.join(clip_path, '{}.png'.format(str(index[0]).zfill(8)))
         target_image_path = osp.join(clip_path, '{}.png'.format(str(index[1]).zfill(8)))
-        source_mask_path = osp.join(clip_path, 'mask_{}.jpg'.format(str(index[0]).zfill(8)))
-        target_mask_path = osp.join(clip_path, 'mask_{}.jpg'.format(str(index[1]).zfill(8)))
 
-        # read images
+        # read images & get mask
         source_image = np.asarray(Image.open(source_image_path).convert("RGB"))
         target_image = np.asarray(Image.open(target_image_path).convert("RGB"))
-        source_mask_image = np.asarray(Image.open(source_mask_path))
-        target_mask_image = np.asarray(Image.open(target_mask_path))
+        source_mask_image, target_mask_image, target_gaze_mask = self.get_mask(source_image, target_image)
 
         # smooth and enlarge masks
         source_mask_image = smooth_expand_mask(source_mask_image, ksize=(11, 11), sigmaX=11, sigmaY=11)
@@ -154,13 +179,34 @@ class HSD_Dataset(Dataset):
         bg_image = bg_image.astype(np.float32) / 255.0
         bg_image = torch.from_numpy(bg_image.transpose(2, 0, 1))
 
-        # rendered_images = self.condition_branch(codedict, bg_images).detach().cpu().numpy()
-        rendered_images = self.condition_branch(codedict).squeeze(0) # (3, h, w)
-        # print('end a getitem')
+        rendered_image = self.condition_branch(codedict).squeeze(0) # 0~1 , 3*512*512, RGB, tensor, cpu
+        rendered_image = render_add_gaze(rendered_image, target_gaze_mask, target_image)
 
-        return dict(target=target_image, mask=target_mask_image, background=bg_image, source_global=source_tensor, source_id=id_feature_selected, source_image=source_image, hint=rendered_images)
+        return dict(target=target_image, mask=target_mask_image, background=bg_image, source_global=source_tensor, source_id=id_feature_selected, source_image=source_image, hint=rendered_image, flag=self.flag)
 
     
+    def get_mask(self, source_image, target_image):
+        # use face parse net to get mask
+        source_image_tensor = get_tensor_clip()(source_image.copy())
+        target_image_tensor = get_tensor_clip()(target_image.copy())
+
+        input_batch = torch.stack([source_image_tensor, target_image_tensor], dim=0) # (2, 3, 512, 512)
+        input_batch = input_batch.cuda()
+        out_batch = self.face_parse_net(input_batch)[0].argmax(1).cpu()
+
+        parsing = out_batch.numpy() # numpy but size is 512 , 2 * 512 * 512
+
+        source_parsing = out_batch[0]
+        target_parsing = out_batch[1]
+
+        source_mask_image = np.where( (source_parsing == 0)|(source_parsing == 14)|(source_parsing == 16), 0, 255).astype('uint8')  # 0 or 255
+        target_mask_image = np.where( (target_parsing == 0)|(target_parsing == 14)|(target_parsing == 16), 0, 255).astype('uint8')  # 0 or 255
+        target_gaze_mask = np.where( (target_parsing == 4)|(target_parsing == 5), 255, 0).astype('uint8')
+
+        return source_mask_image, target_mask_image, target_gaze_mask
+
+
+
     def get_code_dict(self, code_dict, pose_threshold = 0.02, loop_max_times = 20):
         # this method get original a clip code_dict as input
         # return the indexs selected randomly and the corresponding combined code_dict
@@ -215,15 +261,17 @@ class HSD_Dataset(Dataset):
                 loop_count += 1
                 continue
 
+
 class HSD_Dataset_cross(Dataset):
     # this class is the normal way to get a item of a batch
     # every item is cross id
 
-    def __init__(self, root_path, flag=None, lenth = 5):
+    def __init__(self, root_path, condition_branch, face_parse_net, flag=None, lenth = 5):
         
         clip_names = sorted(os.listdir(root_path))
         self.data = [os.path.join(root_path, clip_name) for clip_name in clip_names]
-        self.condition_branch = Condition_Branch()
+        self.condition_branch = condition_branch
+        self.face_parse_net = face_parse_net
         self.flag = flag
         self.lenth = lenth
 
@@ -243,7 +291,7 @@ class HSD_Dataset_cross(Dataset):
         source_clip_path = self.data[source_idx]
         target_clip_path = self.data[target_idx]
 
-        source_condition_pkl_path = os.path.join(source_clip_path, '3DMM_condition.pkl') 
+        source_condition_pkl_path = os.path.join(source_clip_path, '3DMM_condition.pkl')
         target_condition_pkl_path = os.path.join(target_clip_path, '3DMM_condition.pkl')
         id_pkl_path = os.path.join(source_clip_path, 'id.pkl')
 
@@ -259,14 +307,11 @@ class HSD_Dataset_cross(Dataset):
         # get images paths
         source_image_path = osp.join(source_clip_path, '{}.png'.format(str(index[0]).zfill(8)))
         target_image_path = osp.join(target_clip_path, '{}.png'.format(str(index[1]).zfill(8)))
-        source_mask_path = osp.join(source_clip_path, 'mask_{}.jpg'.format(str(index[0]).zfill(8)))
-        target_mask_path = osp.join(target_clip_path, 'mask_{}.jpg'.format(str(index[1]).zfill(8)))
 
-        # read images
+        # read images & get mask
         source_image = np.asarray(Image.open(source_image_path).convert("RGB"))
         target_image = np.asarray(Image.open(target_image_path).convert("RGB"))
-        source_mask_image = np.asarray(Image.open(source_mask_path))
-        target_mask_image = np.asarray(Image.open(target_mask_path))
+        source_mask_image, target_mask_image, target_gaze_mask = self.get_mask(source_image, target_image)
 
         # smooth and enlarge masks
         source_mask_image = smooth_expand_mask(source_mask_image, ksize=(11, 11), sigmaX=11, sigmaY=11)
@@ -290,12 +335,30 @@ class HSD_Dataset_cross(Dataset):
         bg_image = bg_image.astype(np.float32) / 255.0
         bg_image = torch.from_numpy(bg_image.transpose(2, 0, 1))
 
-        # rendered_images = self.condition_branch(codedict, bg_images).detach().cpu().numpy()
-        rendered_images = self.condition_branch(codedict).squeeze(0) # (3, h, w)
-        # print('end a getitem')
+        rendered_image = self.condition_branch(codedict).squeeze(0) # (3, h, w)
+        rendered_image = render_add_gaze(rendered_image, target_gaze_mask, target_image)
 
-        return dict(target=target_image, mask=target_mask_image, background=bg_image, source_global=source_tensor, source_id=id_feature_selected, source_image=source_image, hint=rendered_images, flag=self.flag)
+        return dict(target=target_image, mask=target_mask_image, background=bg_image, source_global=source_tensor, source_id=id_feature_selected, source_image=source_image, hint=rendered_image, flag=self.flag)
 
+    def get_mask(self, source_image, target_image):
+        # use face parse net to get mask
+        source_image_tensor = get_tensor_clip()(source_image.copy())
+        target_image_tensor = get_tensor_clip()(target_image.copy())
+
+        input_batch = torch.stack([source_image_tensor, target_image_tensor], dim=0) # (2, 3, 512, 512)
+        input_batch = input_batch.cuda()
+        out_batch = self.face_parse_net(input_batch)[0].argmax(1).cpu()
+
+        parsing = out_batch.numpy() # numpy but size is 512 , 2 * 512 * 512
+
+        source_parsing = out_batch[0]
+        target_parsing = out_batch[1]
+
+        source_mask_image = np.where( (source_parsing == 0)|(source_parsing == 14)|(source_parsing == 16), 0, 255).astype('uint8')  # 0 or 255
+        target_mask_image = np.where( (target_parsing == 0)|(target_parsing == 14)|(target_parsing == 16), 0, 255).astype('uint8')  # 0 or 255
+        target_gaze_mask = np.where( (target_parsing == 4)|(target_parsing == 5), 255, 0).astype('uint8')
+
+        return source_mask_image, target_mask_image, target_gaze_mask
     
     def get_code_dict(self, source_data_3dmm, target_data_3dmm):
         # this method get original a clip code_dict as input
@@ -332,11 +395,11 @@ class HSD_Dataset_cross(Dataset):
 class HSD_Dataset_single(Dataset):
     # this class is the normal way to get a item of a batch
     # the way up is unnormal way : once get a batch when call getitem()
-    def __init__(self, root_path):
+    def __init__(self, root_path, condition_branch):
         
         clip_names = sorted(os.listdir(root_path))
         self.data = [os.path.join(root_path, clip_name) for clip_name in clip_names]
-        self.condition_branch = Condition_Branch()
+        self.condition_branch = condition_branch
 
     def __len__(self):
         return len(self.data)

@@ -142,4 +142,4 @@ class ImageLogger(Callback):
     def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx):
         """Called when the validation batch ends."""
         if not self.disabled:
-            self.log_img(pl_module, batch, batch_idx, split="cross_id_" + batch['flag'][0])
+            self.log_img(pl_module, batch, batch_idx, split=batch['flag'][0])
