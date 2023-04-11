@@ -6,6 +6,8 @@ Created on Mon Apr 24 15:43:29 2017
 import cv2
 import numpy as np
 from skimage import transform as trans
+import torch
+import torch.nn.functional as F
 
 # reference facial points, a list of coordinates (x,y)
 REFERENCE_FACIAL_POINTS = [
