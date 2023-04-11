@@ -259,7 +259,9 @@ def warp_and_crop_face_tensor(src_img,
     tfm = tform.params[0:2, :]
 
     # convert transformation matrix to PyTorch tensor
-    tfm = transfor_M_to_theta(tfm).type_as(src_img)
+    h1, w1 = src_img.shape[1], src_img.shape[2]
+    h2, w2 = crop_size[1], crop_size[0]
+    tfm = transfor_M_to_theta(tfm, h1, w1, h2, w2).type_as(src_img)
 
     # calculate grid for grid_sample()
     grid = F.affine_grid(tfm.unsqueeze(0), torch.Size([1, 3, crop_size[1], crop_size[0]]))
