@@ -236,18 +236,18 @@ def warp_and_crop_face_tensor(src_img,
         raise FaceWarpException(
             'facial_pts and reference_pts must have the same shape')
 
-    if align_type == 'cv2_affine':
-        tfm = cv2.getAffineTransform(src_pts[0:3], ref_pts[0:3])
-    #        print('cv2.getAffineTransform() returns tfm=\n' + str(tfm))
-    elif align_type == 'affine':
-        tfm = get_affine_transform_matrix(src_pts, ref_pts)
-    #        print('get_affine_transform_matrix() returns tfm=\n' + str(tfm))
-    else:
-        # tfm = get_similarity_transform_for_cv2(src_pts, ref_pts)
-        tform = trans.SimilarityTransform()
-        tform.estimate(src_pts, ref_pts)
-        tfm = tform.params[0:2, :]
+    # calculate transformation matrix
+    tform = trans.SimilarityTransform()
+    tform.estimate(src_pts, ref_pts)
+    tfm = tform.params[0:2, :]
 
-    face_img = cv2.warpAffine(src_img, tfm, (crop_size[0], crop_size[1]))
+    # convert transformation matrix to PyTorch tensor
+    tfm = torch.from_numpy(tfm).float()
+
+    # calculate grid for grid_sample()
+    grid = F.affine_grid(tfm.unsqueeze(0), torch.Size([1, 3, crop_size[1], crop_size[0]]))
+
+    # apply grid_sample() to src_img
+    face_img = F.grid_sample(src_img.unsqueeze(0), grid)
 
     return face_img
