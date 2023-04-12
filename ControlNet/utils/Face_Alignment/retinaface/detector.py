@@ -20,14 +20,15 @@ class RetinafaceDetector:
         self.model.eval()
 
     def detect_faces(self, img_raw, confidence_threshold=0.9, top_k=5000, nms_threshold=0.4, keep_top_k=750, resize=1):
-        img = np.float32(img_raw)
-        im_height, im_width = img.shape[:2]
-        scale = torch.Tensor([img.shape[1], img.shape[0], img.shape[1], img.shape[0]])
-        img -= (104, 117, 123)
-        img = img.transpose(2, 0, 1)
-        img = torch.from_numpy(img).unsqueeze(0)
+        # 判断 img_raw 是否为 torch.tensor 类型, 如果是则不转成 numpy
+        if isinstance(img_raw, torch.Tensor):
+            img = img_raw.detach().unsqueeze(0)
+        else:
+            img = torch.from_numpy(np.float32(img_raw)).permute(2, 0, 1).unsqueeze(0)
+        im_height, im_width = img.shape[2:]
+        scale = torch.tensor([im_width, im_height, im_width, im_height]).to(self.device)
         img = img.to(self.device)
-        scale = scale.to(self.device)
+        img = img - torch.tensor([104, 117, 123]).view(1, -1, 1, 1).to(self.device)
 
         # tic = time.time()
         with torch.no_grad():

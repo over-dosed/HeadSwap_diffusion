@@ -47,13 +47,13 @@ def get_reference_facial_points(output_size=None,
     if (output_size and
             output_size[0] == tmp_crop_size[0] and
             output_size[1] == tmp_crop_size[1]):
-        print('output_size == DEFAULT_CROP_SIZE {}: return default reference points'.format(tmp_crop_size))
+        # print('output_size == DEFAULT_CROP_SIZE {}: return default reference points'.format(tmp_crop_size))
         return tmp_5pts
 
     if (inner_padding_factor == 0 and
             outer_padding == (0, 0)):
         if output_size is None:
-            print('No paddings to do: return default reference points')
+            # print('No paddings to do: return default reference points')
             return tmp_5pts
         else:
             raise FaceWarpException(
@@ -68,7 +68,7 @@ def get_reference_facial_points(output_size=None,
         output_size = tmp_crop_size * \
                       (1 + inner_padding_factor * 2).astype(np.int32)
         output_size += np.array(outer_padding)
-        print('              deduced from paddings, output_size = ', output_size)
+        # print('              deduced from paddings, output_size = ', output_size)
 
     if not (outer_padding[0] < output_size[0]
             and outer_padding[1] < output_size[1]):
@@ -260,7 +260,6 @@ def warp_and_crop_face_tensor(src_img,
     # convert transformation matrix to PyTorch tensor
     h1, w1 = src_img.shape[1], src_img.shape[2]
     tfm = transfor_M_to_theta(tfm, h1, w1)
-    print(tfm)
     tfm = torch.from_numpy(tfm[:2, :]).unsqueeze(0).type_as(src_img)
 
 
