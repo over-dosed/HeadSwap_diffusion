@@ -6,8 +6,9 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from torch.utils.data import DataLoader
 from dataset.HSD_dataset import HSD_Dataset, HSD_Dataset_cross
 
-# condtion Branch & face parse for condition
+# condtion Branch & face parse & face feature extractor for condition
 from modules.ConditionBranch import Condition_Branch
+from modules.Face_feature import FaceFeatureExtractor
 from utils.face_parse.model import BiSeNet
 
 from cldm.logger import ImageLogger
@@ -50,16 +51,25 @@ if __name__ == "__main__":
 
 
     # dataset & dataloader
+
+    ## condition branch
     condition_Branch = Condition_Branch()
+
+    ## face parse
     face_parse_net = BiSeNet(n_classes=19)
     save_pth = '/home/wenchi/zxy/HSD/ControlNet/utils/face_parse/res/cp/79999_iter.pth'
     face_parse_net.load_state_dict(torch.load(save_pth))
     face_parse_net.cuda()
     face_parse_net.eval()
 
-    dataset = HSD_Dataset(root_path, condition_Branch, face_parse_net, flag='train')
-    same_test_dataset = HSD_Dataset(cross_root_path, condition_Branch, face_parse_net, flag='same_test', lenth = 3)
-    cross_test_dataset = HSD_Dataset_cross(cross_root_path, condition_Branch, face_parse_net, flag='cross_test', lenth = 3)
+    ## face feature extractor
+    face_feature_net = FaceFeatureExtractor('/home/wenchi/zxy/HSD/ControlNet/utils/arcface/model_data/arcface_mobilenet_v1.pth', 
+                                            output_size=(112, 112), device = 'cuda')
+
+
+    dataset = HSD_Dataset(root_path, condition_Branch, face_parse_net, face_feature_net, flag='train')
+    same_test_dataset = HSD_Dataset(cross_root_path, condition_Branch, face_parse_net, face_feature_net, flag='same_test', lenth = 3)
+    cross_test_dataset = HSD_Dataset_cross(cross_root_path, condition_Branch, face_parse_net, face_feature_net, flag='cross_test', lenth = 3)
 
     dataloader = DataLoader(dataset, num_workers=0, batch_size=batch_size, shuffle=True, drop_last=True)
     cross_eval_dataloader = DataLoader(same_test_dataset, num_workers=0, batch_size=batch_size, shuffle=True, drop_last=True)

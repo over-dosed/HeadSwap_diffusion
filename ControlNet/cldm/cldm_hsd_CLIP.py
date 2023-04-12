@@ -2,6 +2,7 @@ import einops
 import torch
 import torch as th
 import torch.nn as nn
+import torch.nn.functional as F
 
 from ldm.modules.diffusionmodules.util import (
     conv_nd,
@@ -19,7 +20,7 @@ from ldm.models.diffusion.ddpm_hsd_CLIP import LatentDiffusion
 from ldm.util import log_txt_as_img, exists, instantiate_from_config, default
 from ldm.models.diffusion.ddim_hsd import DDIMSampler
 
-from utils.id_loss import ID_loss
+from modules.Face_feature import FaceFeatureExtractor
 
 
 class ControlledUnetModel(UNetModel):
@@ -320,9 +321,8 @@ class ControlLDM_HSD(LatentDiffusion):
         # set first stage cuda device
         self.first_stage_cuda = first_stage_cuda
 
-        # ID_loss model
-        self.arcface_model_path = arcface_model_path
-        self.ID_loss = ID_loss(device='cuda', arcface_model_path=self.arcface_model_path)
+        # face feature extractor
+        self.face_feature_extractor = FaceFeatureExtractor(arcface_model_path, output_size=(112, 112), device = 'cuda')
 
         # ID_loss weight
         self.l_id_weight = l_id_weight
@@ -434,7 +434,9 @@ class ControlLDM_HSD(LatentDiffusion):
         # get id loss
         predicted_x0 = self.predict_start_from_noise(x_noisy[:,:4,:,:], t, model_output) # predicted x0
         recon_x0 = self.decode_first_stage(predicted_x0) # decode x0, get reconstructed x0: (B, 3, H, W), -1~1
-        id_loss = self.ID_loss(id_gt, recon_x0).mean() # get id loss
+        predicted_x0_feature = self.face_feature_extractor((predicted_x0 + 1.0) * 127.5)
+        recon_x0_feature = self.face_feature_extractor((recon_x0 + 1.0) * 127.5)
+        id_loss = 1.0 - F.cosine_similarity(predicted_x0_feature, recon_x0_feature, dim=1) # get id loss
 
         del predicted_x0
         del recon_x0

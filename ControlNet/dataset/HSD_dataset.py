@@ -120,12 +120,13 @@ def render_add_gaze(rendered_image, target_gaze_mask, target_image):
 
 class HSD_Dataset(Dataset):
     # this class is the normal way to get a item of a batch
-    def __init__(self, root_path, condition_branch, face_parse_net, flag, lenth = None):
+    def __init__(self, root_path, condition_branch, face_parse_net, face_feature_extractor, flag, lenth = None):
         
         clip_names = sorted(os.listdir(root_path))
         self.data = [os.path.join(root_path, clip_name) for clip_name in clip_names]
         self.condition_branch = condition_branch
         self.face_parse_net = face_parse_net
+        self.face_feature_extractor = face_feature_extractor
         self.flag = flag
         self.lenth = lenth
 
@@ -156,6 +157,7 @@ class HSD_Dataset(Dataset):
         target_image = np.asarray(Image.open(target_image_path).convert("RGB"))
         source_mask_image, target_mask_image, target_gaze_mask = self.get_mask(source_image, target_image)
 
+
         # smooth and enlarge masks
         source_mask_image = smooth_expand_mask(source_mask_image, ksize=(11, 11), sigmaX=11, sigmaY=11)
         target_mask_image = smooth_expand_mask(target_mask_image)
@@ -165,9 +167,8 @@ class HSD_Dataset(Dataset):
         source_image = cv2.bitwise_and(source_image, source_image, mask = source_mask_image) # get masked
         bbox = mask_find_bbox(source_mask_image)
         source_image = get_align_image(bbox=bbox, img=source_image) # get align & resized source image, (224, 224, 3), numpy, 0~255
+        id_feature_selected = self.face_feature_extractor(source_image) # get id feature
         source_tensor = get_tensor_clip()(source_image.copy()).to(torch.float16)
-
-        id_feature_selected = id_feature[index[0]]
 
         # get masked images (background)
         bg_image = cv2.bitwise_and(target_image, target_image, mask = 255 - target_mask_image)
@@ -266,12 +267,13 @@ class HSD_Dataset_cross(Dataset):
     # this class is the normal way to get a item of a batch
     # every item is cross id
 
-    def __init__(self, root_path, condition_branch, face_parse_net, flag=None, lenth = 5):
+    def __init__(self, root_path, condition_branch, face_parse_net, face_feature_extractor, flag=None, lenth = 5):
         
         clip_names = sorted(os.listdir(root_path))
         self.data = [os.path.join(root_path, clip_name) for clip_name in clip_names]
         self.condition_branch = condition_branch
         self.face_parse_net = face_parse_net
+        self.face_feature_extractor = face_feature_extractor
         self.flag = flag
         self.lenth = lenth
 
@@ -321,9 +323,8 @@ class HSD_Dataset_cross(Dataset):
         source_image = cv2.bitwise_and(source_image, source_image, mask = source_mask_image) # get masked
         bbox = mask_find_bbox(source_mask_image)
         source_image = get_align_image(bbox=bbox, img=source_image) # get align & resized source image, (224, 224, 3), numpy, 0~255
+        id_feature_selected = self.face_feature_extractor(source_image) # get id feature
         source_tensor = get_tensor_clip()(source_image.copy()).to(torch.float16)
-
-        id_feature_selected = id_feature[index[0]]
 
         # get masked images (background)
         bg_image = cv2.bitwise_and(target_image, target_image, mask = 255 - target_mask_image)

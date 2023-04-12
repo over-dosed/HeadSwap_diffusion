@@ -19,7 +19,7 @@ model:
     only_mid_control: False
     l_id_weight: 0.01
     first_stage_cuda: 1
-    arcface_model_path: '/home/wenchi/zxy/HSD/ControlNet/utils/arcface_pytorch/checkpoints/resnet18_110_onecard.pth'
+    arcface_model_path: '/home/wenchi/zxy/HSD/ControlNet/utils/arcface/model_data/arcface_mobilenet_v1.pth'
 
     control_stage_config:
       target: cldm.cldm.ControlNet
