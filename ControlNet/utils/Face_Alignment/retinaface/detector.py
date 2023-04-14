@@ -12,19 +12,16 @@ from utils.Face_Alignment.retinaface.utils.nms.py_cpu_nms import py_cpu_nms
 
 
 class RetinafaceDetector:
-    def __init__(self, net='mnet', type='cuda'):
+    def __init__(self, pretrained_path, net='mnet', type='cuda'):
         cudnn.benchmark = True
         self.net = net
         self.device = torch.device(type)
-        self.model = load_model(net).to(self.device)
+        self.model = load_model(pretrained_path, net).to(self.device)
         self.model.eval()
 
     def detect_faces(self, img_raw, confidence_threshold=0.9, top_k=5000, nms_threshold=0.4, keep_top_k=750, resize=1):
-        # 判断 img_raw 是否为 torch.tensor 类型, 如果是则不转成 numpy
-        if isinstance(img_raw, torch.Tensor):
-            img = img_raw.detach().unsqueeze(0)
-        else:
-            img = torch.from_numpy(np.float32(img_raw)).permute(2, 0, 1).unsqueeze(0)
+            
+        img = img_raw.detach()
         im_height, im_width = img.shape[2:]
         scale = torch.tensor([im_width, im_height, im_width, im_height]).to(self.device)
         img = img.to(self.device)

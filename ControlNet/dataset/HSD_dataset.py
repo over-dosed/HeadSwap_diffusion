@@ -167,7 +167,7 @@ class HSD_Dataset(Dataset):
         source_image = cv2.bitwise_and(source_image, source_image, mask = source_mask_image) # get masked
         bbox = mask_find_bbox(source_mask_image)
         source_image = get_align_image(bbox=bbox, img=source_image) # get align & resized source image, (224, 224, 3), numpy, 0~255
-        id_feature_selected = self.face_feature_extractor(source_image) # get id feature
+        id_feature_selected = self.face_feature_extractor(np.expand_dims(source_image, axis=0)).squeeze(0) # get id feature
         source_tensor = get_tensor_clip()(source_image.copy()).to(torch.float16)
 
         # get masked images (background)
@@ -323,7 +323,7 @@ class HSD_Dataset_cross(Dataset):
         source_image = cv2.bitwise_and(source_image, source_image, mask = source_mask_image) # get masked
         bbox = mask_find_bbox(source_mask_image)
         source_image = get_align_image(bbox=bbox, img=source_image) # get align & resized source image, (224, 224, 3), numpy, 0~255
-        id_feature_selected = self.face_feature_extractor(source_image) # get id feature
+        id_feature_selected = self.face_feature_extractor(np.expand_dims(source_image, axis=0)).squeeze(0) # get id feature
         source_tensor = get_tensor_clip()(source_image.copy()).to(torch.float16)
 
         # get masked images (background)

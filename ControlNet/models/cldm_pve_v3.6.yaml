@@ -17,8 +17,9 @@ model:
     scale_factor: 0.18215
     use_ema: False
     only_mid_control: False
-    l_id_weight: 0.01
+    l_id_weight: 0.0
     first_stage_cuda: 1
+    retina_path: '/home/wenchi/zxy/HSD/ControlNet/utils/Face_Alignment/retinaface/weights/mobilenet0.25_Final.pth'
     arcface_model_path: '/home/wenchi/zxy/HSD/ControlNet/utils/arcface/model_data/arcface_mobilenet_v1.pth'
 
     control_stage_config:

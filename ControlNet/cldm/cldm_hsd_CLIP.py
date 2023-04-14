@@ -311,7 +311,9 @@ class ControlNet(nn.Module):
 
 class ControlLDM_HSD(LatentDiffusion):
 
-    def __init__(self, control_stage_config, control_key, only_mid_control, l_id_weight, arcface_model_path, first_stage_cuda, *args, **kwargs):
+    def __init__(self, control_stage_config, control_key, only_mid_control, 
+                 l_id_weight, retina_path, arcface_model_path, first_stage_cuda, *args, **kwargs):
+        
         super().__init__(*args, **kwargs)
         self.control_model = instantiate_from_config(control_stage_config)
         self.control_key = control_key
@@ -322,7 +324,7 @@ class ControlLDM_HSD(LatentDiffusion):
         self.first_stage_cuda = first_stage_cuda
 
         # face feature extractor
-        self.face_feature_extractor = FaceFeatureExtractor(arcface_model_path, output_size=(112, 112), device = 'cuda')
+        self.face_feature_extractor = FaceFeatureExtractor(retina_path, arcface_model_path, output_size=(112, 112), device = 'cuda')
 
         # ID_loss weight
         self.l_id_weight = l_id_weight
@@ -434,9 +436,11 @@ class ControlLDM_HSD(LatentDiffusion):
         # get id loss
         predicted_x0 = self.predict_start_from_noise(x_noisy[:,:4,:,:], t, model_output) # predicted x0
         recon_x0 = self.decode_first_stage(predicted_x0) # decode x0, get reconstructed x0: (B, 3, H, W), -1~1
-        predicted_x0_feature = self.face_feature_extractor((predicted_x0 + 1.0) * 127.5)
+        
         recon_x0_feature = self.face_feature_extractor((recon_x0 + 1.0) * 127.5)
-        id_loss = 1.0 - F.cosine_similarity(predicted_x0_feature, recon_x0_feature, dim=1) # get id loss
+        id_gt_feature = self.face_feature_extractor((id_gt + 1.0) * 127.5)
+        id_loss = 1.0 - F.cosine_similarity(id_gt_feature, recon_x0_feature, dim=1) # get id loss
+        id_loss = id_loss.mean()
 
         del predicted_x0
         del recon_x0
@@ -477,7 +481,7 @@ class ControlLDM_HSD(LatentDiffusion):
             zero_condition_clip = condition_clip
 
         if cond_key == 'image' or cond_key == 'image_clip_id':
-            zero_condition_id = torch.zeros(N, 1024).float().to(self.device)
+            zero_condition_id = torch.zeros(N, 512).float().to(self.device)
             c = self.get_learned_conditioning((zero_condition_id, zero_condition_clip), cond_key=cond_key)
         else:
             c = self.get_learned_conditioning(zero_condition_clip, cond_key=cond_key)
@@ -578,7 +582,10 @@ class ControlLDM_HSD(LatentDiffusion):
 
     def configure_optimizers(self):
         lr = self.learning_rate
-        params = list(self.control_model.parameters())
+        if not self.control_locked:
+            params = list(self.control_model.parameters())
+        else:
+            params = list()
 
         # # for train v3.5.1
         # params += list(self.cond_stage_model.mapper.parameters())
@@ -595,7 +602,8 @@ class ControlLDM_HSD(LatentDiffusion):
         # params += list(self.cond_stage_model.id_residual_conv.parameters())
         # params += list(self.proj_out.parameters())
 
-        # for train v3.6
+        # for train v3.6.1
+        params += list(self.cond_stage_model.proj_in.parameters())
         params += list(self.cond_stage_model.id_residual_block.parameters())
         params += list(self.cond_stage_model.final_ln.parameters())
 

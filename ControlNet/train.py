@@ -15,9 +15,9 @@ from cldm.logger import ImageLogger
 from cldm.model import create_model, load_state_dict
 
 # Configs
-model_name = 'v3.6'
+model_name = 'v3.6.1'
 
-resume_path =  '/data1/wc_log/zxy/ckpt/v3.6-epoch=126-global_step=3726.0.ckpt'
+resume_path =  '/data1/wc_log/zxy/ckpt/v3.6.2-epoch=51-global_step=2131.0.ckpt'
 model_cofig_path = '/home/wenchi/zxy/HSD/ControlNet/models/cldm_pve_v3.6.yaml'
 ckpt_save_path = "/data1/wc_log/zxy/ckpt/"
 root_path = '/data1/wc_log/zxy/VFHQ/train'
@@ -28,6 +28,7 @@ n_gpus = 1
 logger_freq = 300
 learning_rate = 1e-5
 sd_locked = True
+control_locked = True
 only_mid_control = False
 
 log_path = '/data1/wc_log/zxy/image_log/log_{}/'.format(model_name)
@@ -47,6 +48,7 @@ if __name__ == "__main__":
     model.load_state_dict(load_state_dict(resume_path, location='cpu'))
     model.learning_rate = learning_rate
     model.sd_locked = sd_locked
+    model.control_locked = control_locked
     model.only_mid_control = only_mid_control
 
 
@@ -63,7 +65,8 @@ if __name__ == "__main__":
     face_parse_net.eval()
 
     ## face feature extractor
-    face_feature_net = FaceFeatureExtractor('/home/wenchi/zxy/HSD/ControlNet/utils/arcface/model_data/arcface_mobilenet_v1.pth', 
+    face_feature_net = FaceFeatureExtractor('/home/wenchi/zxy/HSD/ControlNet/utils/Face_Alignment/retinaface/weights/mobilenet0.25_Final.pth', 
+                                            '/home/wenchi/zxy/HSD/ControlNet/utils/arcface/model_data/arcface_mobilenet_v1.pth', 
                                             output_size=(112, 112), device = 'cuda')
 
 

@@ -258,7 +258,7 @@ def warp_and_crop_face_tensor(src_img,
     tfm = tform.params
 
     # convert transformation matrix to PyTorch tensor
-    h1, w1 = src_img.shape[1], src_img.shape[2]
+    h1, w1 = src_img.shape[2], src_img.shape[3]
     tfm = transfor_M_to_theta(tfm, h1, w1)
     tfm = torch.from_numpy(tfm[:2, :]).unsqueeze(0).type_as(src_img)
 
@@ -267,7 +267,7 @@ def warp_and_crop_face_tensor(src_img,
     grid = F.affine_grid(tfm, [1, 3, h1, w1], align_corners=True)
 
     # apply grid_sample() to src_img
-    face_img = F.grid_sample(src_img.unsqueeze(0), grid, align_corners=True)
+    face_img = F.grid_sample(src_img, grid, align_corners=True)
 
     # avoid out of boundary
     face_img = torch.clamp(face_img, 0, 255)
