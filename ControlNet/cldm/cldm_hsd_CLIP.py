@@ -312,7 +312,7 @@ class ControlNet(nn.Module):
 class ControlLDM_HSD(LatentDiffusion):
 
     def __init__(self, control_stage_config, control_key, only_mid_control, 
-                 l_id_weight, retina_path, arcface_model_path, first_stage_cuda, *args, **kwargs):
+                 l_id_weight, retina_path, arcface_model_path, first_stage_cuda, cond_stage_cuda, *args, **kwargs):
         
         super().__init__(*args, **kwargs)
         self.control_model = instantiate_from_config(control_stage_config)
@@ -322,6 +322,7 @@ class ControlLDM_HSD(LatentDiffusion):
 
         # set first stage cuda device
         self.first_stage_cuda = first_stage_cuda
+        self.cond_stage_cuda = cond_stage_cuda
 
         # face feature extractor
         self.face_feature_extractor = FaceFeatureExtractor(retina_path, arcface_model_path, output_size=(112, 112), device = 'cuda')
@@ -434,17 +435,19 @@ class ControlLDM_HSD(LatentDiffusion):
         loss_dict.update({f'{prefix}/loss_simple': loss_simple.mean()})
 
         # get id loss
-        predicted_x0 = self.predict_start_from_noise(x_noisy[:,:4,:,:], t, model_output) # predicted x0
-        recon_x0 = self.decode_first_stage(predicted_x0) # decode x0, get reconstructed x0: (B, 3, H, W), -1~1
-        
-        recon_x0_feature = self.face_feature_extractor((recon_x0 + 1.0) * 127.5)
-        id_gt_feature = self.face_feature_extractor((id_gt + 1.0) * 127.5)
-        id_loss = 1.0 - F.cosine_similarity(id_gt_feature, recon_x0_feature, dim=1) # get id loss
-        id_loss = id_loss.mean()
-
-        del predicted_x0
-        del recon_x0
-        torch.cuda.empty_cache()
+        if self.l_id_weight == 0.0:
+            id_loss = 0.0
+        else:
+            predicted_x0 = self.predict_start_from_noise(x_noisy[:,:4,:,:], t, model_output) # predicted x0
+            recon_x0 = self.decode_first_stage(predicted_x0) # decode x0, get reconstructed x0: (B, 3, H, W), -1~1
+            
+            recon_x0_feature = self.face_feature_extractor((recon_x0 + 1.0) * 127.5)
+            id_gt_feature = self.face_feature_extractor((id_gt + 1.0) * 127.5)
+            id_loss = 1.0 - F.cosine_similarity(id_gt_feature, recon_x0_feature, dim=1) # get id loss
+            id_loss = id_loss.mean()
+            del predicted_x0
+            del recon_x0
+            torch.cuda.empty_cache()
 
         loss_dict.update({f'{prefix}/loss_id': id_loss})
 
@@ -471,6 +474,27 @@ class ControlLDM_HSD(LatentDiffusion):
         if self.use_ema:
             self.model_ema(self.model)
 
+    def get_learned_conditioning(self, c, cond_key = None):
+        self.cond_stage_model.cuda(self.cond_stage_cuda)
+
+        if self.cond_stage_forward is None:
+            if cond_key == 'image' or cond_key == 'image_clip_id':
+                (xc_id, xc_gloabl) = c
+                xc_id = xc_id.cuda(self.cond_stage_cuda)
+                xc_gloabl = xc_gloabl.cuda(self.cond_stage_cuda)
+                c = self.cond_stage_model(xc_gloabl, xc_id)
+                c = c.cuda(0)
+                return c
+            if hasattr(self.cond_stage_model, 'encode') and callable(self.cond_stage_model.encode):              
+                c = self.cond_stage_model.encode(c)
+                if isinstance(c, DiagonalGaussianDistribution):
+                    c = c.mode()
+            else:
+                c = self.cond_stage_model(c)
+        else:
+            assert hasattr(self.cond_stage_model, self.cond_stage_forward)
+            c = getattr(self.cond_stage_model, self.cond_stage_forward)(c)
+        return c
 
     @torch.no_grad()
     def get_unconditional_conditioning(self, N, cond_key, condition_clip = None):
@@ -603,6 +627,7 @@ class ControlLDM_HSD(LatentDiffusion):
         # params += list(self.proj_out.parameters())
 
         # for train v3.6.1
+        params += list(self.cond_stage_model.mapper.parameters())
         params += list(self.cond_stage_model.proj_in.parameters())
         params += list(self.cond_stage_model.id_residual_block.parameters())
         params += list(self.cond_stage_model.final_ln.parameters())

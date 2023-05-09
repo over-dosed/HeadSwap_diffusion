@@ -108,12 +108,13 @@ class ImageLogger(Callback):
             else:
                 source_image = batch['source_image']
 
-            source_image_feature = pl_module.face_feature_extractor((source_image[:N].clone() + 1.0) * 127.5)
-            sample_feature = pl_module.face_feature_extractor((images['samples'] + 1.0) * 127.5)
-            sample_cfg_feature = pl_module.face_feature_extractor((images['samples_cfg_scale'] + 1.0) * 127.5)
+            with torch.no_grad():
+                source_image_feature = pl_module.face_feature_extractor((source_image[:N].clone() + 1.0) * 127.5)
+                sample_feature = pl_module.face_feature_extractor((images['samples'] + 1.0) * 127.5)
+                sample_cfg_feature = pl_module.face_feature_extractor((images['samples_cfg_scale'] + 1.0) * 127.5)
 
-            id_loss_samples = 1.0 - F.cosine_similarity(source_image_feature, sample_feature, dim=1) # get id loss
-            id_loss_cfg = 1.0 - F.cosine_similarity(source_image_feature, sample_cfg_feature, dim=1) # get id loss
+                id_loss_samples = 1.0 - F.cosine_similarity(source_image_feature, sample_feature, dim=1) # get id loss
+                id_loss_cfg = 1.0 - F.cosine_similarity(source_image_feature, sample_cfg_feature, dim=1) # get id loss
 
             for k in images:
                 images[k] = images[k][:N].float()

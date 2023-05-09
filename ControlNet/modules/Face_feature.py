@@ -23,6 +23,8 @@ class FaceFeatureExtractor(nn.Module):
         self.device = device
         self.detector = RetinafaceDetector(retina_path, type=self.device)
         self.extractor = self.init_arcface(arcface_model_path)
+        for param in self.extractor.parameters():
+            param.requires_grad = False
         self.output_size = output_size
 
     def init_arcface(self, model_path):
@@ -56,7 +58,8 @@ class FaceFeatureExtractor(nn.Module):
         else:
             img = torch.from_numpy(np.float32(img)).permute(2, 0, 1).unsqueeze(0)
         
-        _, facial5points = self.detector.detect_faces(img)
+        with torch.no_grad():
+            _, facial5points = self.detector.detect_faces(img)
 
         # detect no face
         if len(facial5points) == 0:
@@ -111,5 +114,5 @@ class FaceFeatureExtractor(nn.Module):
 
         croped_img = (croped_img - 127.5) / 127.5 # (B, 3, 112, 112), -1~1
 
-        feature = self.extract_feature(croped_img) # (B, 512)
+        feature = self.extract_feature(croped_img).cpu() # (B, 512)
         return feature

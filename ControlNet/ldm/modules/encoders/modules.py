@@ -376,6 +376,8 @@ class FrozenCLIPImageEmbedder_id_full(AbstractEncoder):
         self.proj_in = nn.Linear(512, 1024)
         self.id_residual_block = id_residual()
 
+        self.device = 'cuda:0'
+
 
         self.freeze()
 
@@ -384,7 +386,7 @@ class FrozenCLIPImageEmbedder_id_full(AbstractEncoder):
         for param in self.transformer.parameters():
             param.requires_grad = False
         for param in self.mapper.parameters():
-            param.requires_grad = False
+            param.requires_grad = True
         for param in self.proj_in.parameters():
             param.requires_grad = True
         for param in self.final_ln.parameters():
@@ -397,7 +399,7 @@ class FrozenCLIPImageEmbedder_id_full(AbstractEncoder):
         with torch.no_grad():
             outputs = self.transformer(pixel_values=image)
             z = outputs.last_hidden_state # z : (B, 257, 1024)
-            z = self.mapper(z)  # z : (B, 257, 1024)
+        z = self.mapper(z)  # z : (B, 257, 1024)
 
         id_feature = self.proj_in(id_feature) # id_feature: (B, 1024)
         id_residual = self.id_residual_block(z, id_feature) # id_residual: (B, 257, 1024)
