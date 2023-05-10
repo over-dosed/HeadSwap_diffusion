@@ -79,6 +79,7 @@ class ControlNet(nn.Module):
             num_attention_blocks=None,
             disable_middle_self_attn=False,
             use_linear_in_transformer=False,
+            adapter_beta=0.,
     ):
         super().__init__()
         if use_spatial_transformer:
@@ -131,6 +132,7 @@ class ControlNet(nn.Module):
         self.num_head_channels = num_head_channels
         self.num_heads_upsample = num_heads_upsample
         self.predict_codebook_ids = n_embed is not None
+        self.adapter_beta = adapter_beta
 
         time_embed_dim = model_channels * 4
         self.time_embed = nn.Sequential(
@@ -209,7 +211,7 @@ class ControlNet(nn.Module):
                             ) if not use_spatial_transformer else SpatialTransformer(
                                 ch, num_heads, dim_head, depth=transformer_depth, context_dim=context_dim,
                                 disable_self_attn=disabled_sa, use_linear=use_linear_in_transformer,
-                                use_checkpoint=use_checkpoint
+                                use_checkpoint=use_checkpoint, adapter_beta=adapter_beta
                             )
                         )
                 self.input_blocks.append(TimestepEmbedSequential(*layers))
@@ -268,7 +270,7 @@ class ControlNet(nn.Module):
             ) if not use_spatial_transformer else SpatialTransformer(  # always uses a self-attn
                 ch, num_heads, dim_head, depth=transformer_depth, context_dim=context_dim,
                 disable_self_attn=disable_middle_self_attn, use_linear=use_linear_in_transformer,
-                use_checkpoint=use_checkpoint
+                use_checkpoint=use_checkpoint, adapter_beta=adapter_beta
             ),
             ResBlock(
                 ch,
@@ -340,20 +342,22 @@ class ControlLDM_HSD(LatentDiffusion):
         control = control.to(self.device)
         # control = einops.rearrange(control, 'b h w c -> b c h w')
         control = control.to(memory_format=torch.contiguous_format).float()
-        return x, dict(c_crossattn=[c], c_concat=[control])
+        return x, dict(c_crossattn=[c['c_crossattn']], c_adapter=[c['c_adapter']], c_concat=[control])
 
     def apply_model(self, x_noisy, t, cond, *args, **kwargs):
         assert isinstance(cond, dict)
         diffusion_model = self.model.diffusion_model
 
-        cond_txt = torch.cat(cond['c_crossattn'], 1)
+        cond_crossattn = torch.cat(cond['c_crossattn'], 1)
+        cond_adapter = torch.cat(cond['c_adapter'], 1)
+        cond_dict = {'c_crossattn':cond_crossattn, 'c_adapter':cond_adapter}
 
         if cond['c_concat'] is None:
-            eps = diffusion_model(x=x_noisy, timesteps=t, context=cond_txt, control=None, only_mid_control=self.only_mid_control)
+            eps = diffusion_model(x=x_noisy, timesteps=t, context=cond_dict, control=None, only_mid_control=self.only_mid_control)
         else:
-            control = self.control_model(x=x_noisy, hint=torch.cat(cond['c_concat'], 1), timesteps=t, context=cond_txt)
+            control = self.control_model(x=x_noisy, hint=torch.cat(cond['c_concat'], 1), timesteps=t, context=cond_dict)
             control = [c * scale for c, scale in zip(control, self.control_scales)]
-            eps = diffusion_model(x=x_noisy, timesteps=t, context=cond_txt, control=control, only_mid_control=self.only_mid_control)
+            eps = diffusion_model(x=x_noisy, timesteps=t, context=cond_dict, control=control, only_mid_control=self.only_mid_control)
 
         return eps
     
@@ -483,7 +487,11 @@ class ControlLDM_HSD(LatentDiffusion):
                 xc_id = xc_id.cuda(self.cond_stage_cuda)
                 xc_gloabl = xc_gloabl.cuda(self.cond_stage_cuda)
                 c = self.cond_stage_model(xc_gloabl, xc_id)
-                c = c.cuda(0)
+                if isinstance(c, dict):
+                    for key in c:
+                        c[key] = c[key].cuda(0)
+                else: 
+                    c = c.cuda(0)
                 return c
             if hasattr(self.cond_stage_model, 'encode') and callable(self.cond_stage_model.encode):              
                 c = self.cond_stage_model.encode(c)
@@ -510,8 +518,6 @@ class ControlLDM_HSD(LatentDiffusion):
         else:
             c = self.get_learned_conditioning(zero_condition_clip, cond_key=cond_key)
         
-        if cond_key == 'image_clip_id':
-            c = self.proj_out(c)
         return c
     
     def un_norm_clip(self, x):
@@ -530,7 +536,7 @@ class ControlLDM_HSD(LatentDiffusion):
 
         log = dict()
         z, c = self.get_input(batch, self.first_stage_key, bs=N)
-        c_cat, c = c["c_concat"][0][:N], c["c_crossattn"][0][:N]
+        c_cat, c_cross, c_adapter = c["c_concat"][0][:N], c["c_crossattn"][0][:N], c["c_adapter"][0][:N]
         N = min(z.shape[0], N)
         n_row = min(z.shape[0], n_row)
         log["reconstruction"] = self.decode_first_stage(z)
@@ -558,7 +564,7 @@ class ControlLDM_HSD(LatentDiffusion):
 
         if sample:
             # get denoise row
-            samples, z_denoise_row = self.sample_log(cond={"c_concat": [c_cat], "c_crossattn": [c]},
+            samples, z_denoise_row = self.sample_log(cond={"c_concat": [c_cat], "c_crossattn": [c_cross], "c_adapter": [c_adapter]},
                                                      batch_size=N, ddim=use_ddim,
                                                      ddim_steps=ddim_steps, eta=ddim_eta, rest=z[:N,4:,:,:])
             x_samples = self.decode_first_stage(samples)
@@ -569,8 +575,9 @@ class ControlLDM_HSD(LatentDiffusion):
 
         if plot_no_condition:
             # zero_condtion has the same shape, dtype and devices
-            zero_condition = torch.zeros_like(c, device= c.device)
-            samples, z_denoise_row = self.sample_log(cond={"c_concat": [c_cat], "c_crossattn": [zero_condition]},
+            zero_cross = torch.zeros_like(c_cross, device= c_cross.device)
+            zero_adapter = torch.zeros_like(c_adapter, device= c_adapter.device)
+            samples, z_denoise_row = self.sample_log(cond={"c_concat": [c_cat], "c_crossattn": [zero_cross], "c_adapter": [zero_adapter]},
                                                      batch_size=N, ddim=use_ddim,
                                                      ddim_steps=ddim_steps, eta=ddim_eta, rest=z[:N,4:,:,:])
             x_samples = self.decode_first_stage(samples)
@@ -580,10 +587,11 @@ class ControlLDM_HSD(LatentDiffusion):
             if unconditional_guidance_id:
                 uc_cross = self.get_unconditional_conditioning(N, self.cond_stage_key, condition_clip = batch['source_global'])
             else:
-                uc_cross = self.get_unconditional_conditioning(N, self.cond_stage_key)
+                uc_feature = self.get_unconditional_conditioning(N, self.cond_stage_key)
             uc_cat = c_cat  # torch.zeros_like(c_cat)
-            uc_full = {"c_concat": [uc_cat], "c_crossattn": [uc_cross]}
-            samples_cfg, _ = self.sample_log(cond={"c_concat": [c_cat], "c_crossattn": [c]},
+            uc_cross, uc_adapter = uc_feature['c_crossattn'], uc_feature['c_adapter']
+            uc_full = {"c_concat": [uc_cat], "c_crossattn": [uc_cross], "c_adapter": [uc_adapter]}
+            samples_cfg, _ = self.sample_log(cond={"c_concat": [c_cat], "c_crossattn": [c_cross], "c_adapter": [c_adapter]},
                                              batch_size=N, ddim=use_ddim,
                                              ddim_steps=ddim_steps, eta=ddim_eta,
                                              unconditional_guidance_scale=unconditional_guidance_scale,
@@ -606,35 +614,41 @@ class ControlLDM_HSD(LatentDiffusion):
 
     def configure_optimizers(self):
         lr = self.learning_rate
+
+        # lock controlnet
         if not self.control_locked:
             params = list(self.control_model.parameters())
         else:
             params = list()
 
-        # # for train v3.5.1
-        # params += list(self.cond_stage_model.mapper.parameters())
-        # params += list(self.cond_stage_model.final_ln.parameters())
-        # params += list(self.cond_stage_model.id_residual_ST1.parameters())
-        # params += list(self.cond_stage_model.id_residual_ST2.parameters())
-        # params += list(self.cond_stage_model.id_residual_conv.parameters())
-        # params += list(self.proj_out.parameters())
-
-        # # for train v3.5.2
-        # params += list(self.cond_stage_model.final_ln.parameters())
-        # params += list(self.cond_stage_model.id_residual_ST1.parameters())
-        # params += list(self.cond_stage_model.id_residual_ST2.parameters())
-        # params += list(self.cond_stage_model.id_residual_conv.parameters())
-        # params += list(self.proj_out.parameters())
-
-        # for train v3.6.1
-        params += list(self.cond_stage_model.mapper.parameters())
-        params += list(self.cond_stage_model.proj_in.parameters())
-        params += list(self.cond_stage_model.id_residual_block.parameters())
-        params += list(self.cond_stage_model.final_ln.parameters())
-
+        # lock decoder
         if not self.sd_locked:
             params += list(self.model.diffusion_model.output_blocks.parameters())
             params += list(self.model.diffusion_model.out.parameters())
+
+        # for train v3.7 feature branch
+        print('train cond_stage_model:')
+        params += list(self.cond_stage_model.id_proj_in.parameters())
+        params += list(self.cond_stage_model.id_mapper.parameters())
+        params += list(self.cond_stage_model.global_mapper.parameters())
+        params += list(self.cond_stage_model.id_residual_block.parameters())
+        params += list(self.cond_stage_model.id_norm.parameters())
+        params += list(self.cond_stage_model.global_norm.parameters())
+        params += list(self.cond_stage_model.id_proj_out.parameters())
+        params += list(self.cond_stage_model.global_proj_out.parameters())
+
+        # train adapter
+        print('train adapter:')
+        if self.control_model.adapter_beta > 0.0 and self.control_locked:
+            control_adapter_param = [x[1] for x in self.control_model.named_parameters() if 'adapter' in x[0]]
+            params += control_adapter_param
+            print('train adapter in controlnet: len = ', len(control_adapter_param))
+
+        if self.model.diffusion_model.adapter_beta > 0.0:
+            diffusion_adapter_param = [x[1] for x in self.model.diffusion_model.named_parameters() if 'adapter' in x[0]]
+            params += diffusion_adapter_param
+            print('train adapter in diffusion_model: len = ', len(diffusion_adapter_param))
+
         opt = torch.optim.AdamW(params, lr=lr)
         return opt
 

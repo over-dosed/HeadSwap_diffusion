@@ -15,13 +15,14 @@ from cldm.logger import ImageLogger
 from cldm.model import create_model, load_state_dict
 
 # Configs
-model_name = 'v3.6.1-single-jjk_video1_Feature_2'
+model_name = 'v3.7_adapter'
 
 # resume_path =  '/data1/wc_log/zxy/ckpt/v3.6.1-epoch=46-global_step=1926.0.ckpt'
-resume_path =  '/data1/wc_log/zxy/ckpt/v3.6.1-single-jjk_video1_Feature-epoch=31-global_step=4799.0.ckpt'
-model_cofig_path = '/home/wenchi/zxy/HSD/ControlNet/models/cldm_pve_v3.6.yaml'
+resume_path =  '/data1/wc_log/zxy/ckpt/v3.7_adapter-begin.ckpt'
+model_cofig_path = '/home/wenchi/zxy/HSD/ControlNet/models/cldm_pve_v3.7.yaml'
 ckpt_save_path = "/data1/wc_log/zxy/ckpt/"
-root_path = '/data1/wc_log/zxy/custom_dataset/jjk_video_1'
+# root_path = '/data1/wc_log/zxy/custom_dataset/jjk_video_1' # for single id train
+root_path = '/data1/wc_log/zxy/VFHQ/train' # for single id train
 cross_root_path = '/data1/wc_log/zxy/VFHQ/test'
 
 batch_size = 4
@@ -39,13 +40,6 @@ log_path = '/data1/wc_log/zxy/image_log/log_{}/'.format(model_name)
 if __name__ == "__main__":
     # First use cpu to load models. Pytorch Lightning will automatically move it to GPUs.
     model = create_model(model_cofig_path).cpu()
-
-    # torch 2.0
-    # model.model = torch.compile(model.model)
-    # model.first_stage_model = torch.compile(model.first_stage_model)
-    # model.cond_stage_model = torch.compile(model.cond_stage_model)
-    # model.control_model = torch.compile(model.control_model)
-    # model.ID_loss = torch.compile(model.ID_loss)
 
     model.load_state_dict(load_state_dict(resume_path, location='cpu'))
     model.learning_rate = learning_rate
@@ -72,9 +66,9 @@ if __name__ == "__main__":
                                             output_size=(112, 112), device = 'cuda:1')
 
 
-    dataset = HSD_Dataset_single(root_path, condition_Branch, face_parse_net, face_feature_net, flag='train')
-    same_test_dataset = HSD_Dataset(cross_root_path, condition_Branch, face_parse_net, face_feature_net, flag='same_test', lenth = 4)
-    cross_test_dataset = HSD_Dataset_cross(cross_root_path, condition_Branch, face_parse_net, face_feature_net, flag='cross_test', lenth = 4)
+    dataset = HSD_Dataset(root_path, condition_Branch, face_parse_net, face_feature_net, flag='train')
+    same_test_dataset = HSD_Dataset(cross_root_path, condition_Branch, face_parse_net, face_feature_net, flag='same_test', lenth = batch_size)
+    cross_test_dataset = HSD_Dataset_cross(cross_root_path, condition_Branch, face_parse_net, face_feature_net, flag='cross_test', lenth = batch_size)
 
     dataloader = DataLoader(dataset, num_workers=0, batch_size=batch_size, shuffle=True, drop_last=True)
     cross_eval_dataloader = DataLoader(same_test_dataset, num_workers=0, batch_size=batch_size, shuffle=True, drop_last=True)
