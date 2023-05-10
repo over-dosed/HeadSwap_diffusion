@@ -242,13 +242,23 @@ class MemoryEfficientCrossAttention(nn.Module):
         )
         return self.to_out(out)
 
+class adapter(nn.Module):
+    def __init__(self, attn_cls, dim, n_heads, d_head, dropout=0., context_dim=None, adapter_beta=0.):
+        super().__init__()
 
+        self.norm = nn.LayerNorm(dim)
+        self.beta = adapter_beta
+        self.gamma = nn.Parameter(torch.tensor(0.))
+        self.attn = attn_cls(query_dim=dim, heads=n_heads, dim_head=d_head, dropout=dropout, context_dim=context_dim)
+            
+    def forward(self, x, adapter_feature=None):
+        return self.attn(self.norm(x), context=adapter_feature) * self.beta * F.tanh(self.gamma)
 class BasicTransformerBlock(nn.Module):
     ATTENTION_MODES = {
         "softmax": CrossAttention,  # vanilla attention
         "softmax-xformers": MemoryEfficientCrossAttention
     }
-    def __init__(self, dim, n_heads, d_head, dropout=0., context_dim=None, gated_ff=True, checkpoint=True,
+    def __init__(self, dim, n_heads, d_head, dropout=0., context_dim=None, gated_ff=True, checkpoint=True, adapter_beta=0.,
                  disable_self_attn=False):
         super().__init__()
         attn_mode = "softmax-xformers" if XFORMERS_IS_AVAILBLE else "softmax"
@@ -265,11 +275,20 @@ class BasicTransformerBlock(nn.Module):
         self.norm3 = nn.LayerNorm(dim)
         self.checkpoint = checkpoint
 
-    def forward(self, x, context=None):
-        return checkpoint(self._forward, (x, context), self.parameters(), self.checkpoint)
+        # if adapter_beta not equal 0.0, create adapter and learnable variable gamma
+        # adapter : cross_attention with input: x, context: id_feature (B, 1, 1024)
+        self.adapter_beta = adapter_beta
+        if adapter_beta != 0.0:
+            self.adapter = adapter(attn_cls, dim, n_heads, d_head, dropout, context_dim, adapter_beta)
+            
 
-    def _forward(self, x, context=None):
+    def forward(self, x, context=None, adapter_feature=None):
+        return checkpoint(self._forward, (x, context, adapter_feature), self.parameters(), self.checkpoint)
+
+    def _forward(self, x, context=None, adapter_feature=None):
         x = self.attn1(self.norm1(x), context=context if self.disable_self_attn else None) + x
+        if self.adapter_beta != 0.0:
+            x = self.adapter(x, adapter_feature=adapter_feature) + x
         x = self.attn2(self.norm2(x), context=context) + x
         x = self.ff(self.norm3(x)) + x
         return x
@@ -287,7 +306,7 @@ class SpatialTransformer(nn.Module):
     def __init__(self, in_channels, n_heads, d_head,
                  depth=1, dropout=0., context_dim=None,
                  disable_self_attn=False, use_linear=False,
-                 use_checkpoint=True):
+                 use_checkpoint=True, adapter_beta = 0.):
         super().__init__()
         if exists(context_dim) and not isinstance(context_dim, list):
             context_dim = [context_dim]
@@ -305,7 +324,7 @@ class SpatialTransformer(nn.Module):
 
         self.transformer_blocks = nn.ModuleList(
             [BasicTransformerBlock(inner_dim, n_heads, d_head, dropout=dropout, context_dim=context_dim[d],
-                                   disable_self_attn=disable_self_attn, checkpoint=use_checkpoint)
+                                   disable_self_attn=disable_self_attn, checkpoint=use_checkpoint, adapter_beta=adapter_beta)
                 for d in range(depth)]
         )
         if not use_linear:
@@ -320,8 +339,13 @@ class SpatialTransformer(nn.Module):
 
     def forward(self, x, context=None):
         # note: if no context is given, cross-attention defaults to self-attention
-        if not isinstance(context, list):
-            context = [context]
+        if isinstance(context, dict):
+            adapter_feature = context['c_adapter']
+            context = context['c_crossattn']
+        else:
+            # no adapter_feature is given
+            adapter_feature = None
+
         b, c, h, w = x.shape
         x_in = x
         x = self.norm(x)
@@ -331,7 +355,7 @@ class SpatialTransformer(nn.Module):
         if self.use_linear:
             x = self.proj_in(x)
         for i, block in enumerate(self.transformer_blocks):
-            x = block(x, context=context[i])
+            x = block(x, context=context, adapter_feature=adapter_feature)
         if self.use_linear:
             x = self.proj_out(x)
         x = rearrange(x, 'b (h w) c -> b c h w', h=h, w=w).contiguous()

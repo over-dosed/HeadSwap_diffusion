@@ -570,7 +570,6 @@ class LatentDiffusion(DDPM):
         reset_num_ema_updates = kwargs.pop("reset_num_ema_updates", False)
         ignore_keys = kwargs.pop("ignore_keys", [])
         super().__init__(conditioning_key=conditioning_key, *args, **kwargs)
-        self.proj_out=nn.Linear(1024, 768)
         self.concat_mode = concat_mode
         self.cond_stage_trainable = cond_stage_trainable
         self.cond_stage_key = cond_stage_key
@@ -825,15 +824,12 @@ class LatentDiffusion(DDPM):
             if not self.cond_stage_trainable or force_c_encode:
                 if cond_key == 'image' or cond_key == 'image_clip_id':
                     c = self.get_learned_conditioning((xc_id.to(self.device), xc_gloabl.to(self.device)), cond_key)
-                    if cond_key == 'image_clip_id':
-                        c = self.proj_out(c)
-                    c = c.float()
+                    # c = c.float()
                 elif isinstance(xc, dict) or isinstance(xc, list):
                     # import pudb; pudb.set_trace()
                     c = self.get_learned_conditioning(xc)
                 else:
                     c = self.get_learned_conditioning(xc.to(self.device))
-                    c = self.proj_out(c)
                     c = c.float()
             else:
                 c = xc
