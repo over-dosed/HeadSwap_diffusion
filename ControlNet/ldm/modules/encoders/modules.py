@@ -2,10 +2,12 @@ import torch
 import torch.nn as nn
 from torch.utils.checkpoint import checkpoint
 
-from transformers import T5Tokenizer, T5EncoderModel, CLIPTokenizer, CLIPTextModel
+from transformers import T5Tokenizer, T5EncoderModel, CLIPTokenizer, CLIPTextModel, CLIPVisionModel
 
 import open_clip
 from ldm.util import default, count_params
+
+from .xf import LayerNorm, Transformer
 
 
 class AbstractEncoder(nn.Module):
@@ -209,5 +211,40 @@ class FrozenCLIPT5Encoder(AbstractEncoder):
         clip_z = self.clip_encoder.encode(text)
         t5_z = self.t5_encoder.encode(text)
         return [clip_z, t5_z]
+    
+class FrozenCLIPImageEmbedder(AbstractEncoder):
+    """Uses the CLIP transformer encoder for text (from Hugging Face)"""
+    def __init__(self, version="openai/clip-vit-large-patch14"):
+        super().__init__()
+        self.transformer = CLIPVisionModel.from_pretrained(version)
+        self.final_ln = LayerNorm(1024)
+        self.mapper = Transformer(
+                1,
+                1024,
+                5,
+                1,
+            )
+
+        self.freeze()
+
+    def freeze(self):
+        self.transformer = self.transformer.eval()
+        for param in self.parameters():
+            param.requires_grad = False
+        for param in self.mapper.parameters():
+            param.requires_grad = True
+        for param in self.final_ln.parameters():
+            param.requires_grad = True
+
+    def forward(self, image):
+        outputs = self.transformer(pixel_values=image)
+        z = outputs.pooler_output
+        z = z.unsqueeze(1)
+        z = self.mapper(z)
+        z = self.final_ln(z)
+        return z
+
+    def encode(self, image):
+        return self(image)
 
 
