@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from HSD.utils.face_parse.resnet import Resnet18
+from utils.face_parse.resnet import Resnet18
 # from modules.bn import InPlaceABNSync as BatchNorm2d
 
 

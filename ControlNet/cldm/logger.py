@@ -2,6 +2,7 @@ import os
 import cv2
 import numpy as np
 import torch
+import torch.nn.functional as F
 
 import torchvision
 from PIL import Image
@@ -107,8 +108,13 @@ class ImageLogger(Callback):
             else:
                 source_image = batch['source_image']
 
-            id_loss_samples = pl_module.ID_loss(source_image[:N].clone(), images['samples'])
-            id_loss_cfg = pl_module.ID_loss(source_image[:N].clone(), images['samples_cfg_scale'])
+            with torch.no_grad():
+                source_image_feature = pl_module.face_feature_extractor((source_image[:N].clone() + 1.0) * 127.5)
+                sample_feature = pl_module.face_feature_extractor((images['samples'] + 1.0) * 127.5)
+                sample_cfg_feature = pl_module.face_feature_extractor((images['samples_cfg_scale'] + 1.0) * 127.5)
+
+                id_loss_samples = 1.0 - F.cosine_similarity(source_image_feature, sample_feature, dim=1) # get id loss
+                id_loss_cfg = 1.0 - F.cosine_similarity(source_image_feature, sample_cfg_feature, dim=1) # get id loss
 
             for k in images:
                 images[k] = images[k][:N].float()
@@ -142,4 +148,4 @@ class ImageLogger(Callback):
     def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx):
         """Called when the validation batch ends."""
         if not self.disabled:
-            self.log_img(pl_module, batch, batch_idx, split="cross_id_" + batch['flag'][0])
+            self.log_img(pl_module, batch, batch_idx, split=batch['flag'][0])

@@ -1,0 +1,25 @@
+1_s /data1/wc_log/zxy/VFHQ/test/Clip+NZpbTldv8Rk+P2+C0+F34338-34466/00000003.png
+1_t /data1/wc_log/zxy/VFHQ/test/Clip+okx7B5ggBvo+P0+C0+F3046-3157/00000011.png
+
+
+2_s /data1/wc_log/zxy/VFHQ/test/Clip+ka64cyDltpI+P0+C2+F2883-3062/00000053.png
+2_t /data1/wc_log/zxy/VFHQ/test/Clip+y59gJXBBXp0+P0+C0+F2590-2709/00000095.png
+
+
+3_s /data1/wc_log/zxy/VFHQ/test/Clip+o8-8YWCDJt0+P0+C0+F5209-5360/00000016.png
+3_t /data1/wc_log/zxy/VFHQ/test/Clip+miRoh8eMVkw+P0+C0+F3323-3463/00000134.png
+
+
+4_s /data1/wc_log/zxy/VFHQ/test/Clip+88B87CPb6qo+P0+C0+F10741-10848/00000051.png
+4_t /data1/wc_log/zxy/VFHQ/test/Clip+nxMHEN-lqqY+P0+C1+F805-936/00000035.png
+
+
+5_s /data1/wc_log/zxy/VFHQ/test/Clip+t5bcnvOMizI+P1+C1+F65074-65320/00000151.png
+5_t /data1/wc_log/zxy/VFHQ/test/Clip+l30AYDH4IR0+P0+C0+F832-966/00000001.png
+
+/data1/wc_log/zxy/VFHQ/test/Clip+okx7B5ggBvo+P0+C0+F3046-3157/00000002.png
+/data1/wc_log/zxy/VFHQ/test/Clip+okx7B5ggBvo+P0+C0+F3046-3157/00000014.png
+/data1/wc_log/zxy/VFHQ/test/Clip+okx7B5ggBvo+P0+C0+F3046-3157/00000056.png
+/data1/wc_log/zxy/VFHQ/test/Clip+okx7B5ggBvo+P0+C0+F3046-3157/00000066.png
+/data1/wc_log/zxy/VFHQ/test/Clip+okx7B5ggBvo+P0+C0+F3046-3157/00000077.png
+
