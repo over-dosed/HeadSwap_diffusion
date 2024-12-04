@@ -295,16 +295,14 @@ class DECA(nn.Module):
         }
         return opdict
 
-    def render_for_hsd(self, codedict, original_image=None):
-        ## codedict: should import shape, exp, pose, tex, cam, light
+    def render_for_hsd(self, codedict, original_image=None, h=512, w=512):
+        ## codedict: should import shape, exp, pose, tex, cam, light, tforms
         ## original_image: tensor, cuda, B*3*512*512, RGB, 0~1
 
         # no Batch dim, expand dim
-        if original_image.dim() == 3:
+        if codedict['tforms'].dim() == 2:
             for key in codedict:
                 codedict[key] = codedict[key].unsqueeze(0)
-            
-            original_image = original_image.unsqueeze(0)
         
         tform = codedict['tforms']
         
@@ -318,11 +316,9 @@ class DECA(nn.Module):
         trans_verts = util.batch_orth_proj(verts, codedict['cam']); trans_verts[:,:,1:] = -trans_verts[:,:,1:]
 
         points_scale = [self.image_size, self.image_size]
-        _, _, h, w = original_image.shape
         trans_verts = transform_points(trans_verts, tform, points_scale, [h, w])
-        background = original_image
 
-        ops = self.render(verts, trans_verts, albedo, h=h, w=w, background=background)
+        ops = self.render(verts, trans_verts, albedo, h=h, w=w)
         
         zero_detail_code = torch.zeros((codedict['pose'].shape[0], 128)).to(self.device)
         uv_z = self.D_detail(torch.cat([codedict['pose'][:,3:], codedict['exp'], zero_detail_code], dim=1))
@@ -330,7 +326,7 @@ class DECA(nn.Module):
         uv_shading = self.render.add_SHlight(uv_detail_normals, codedict['light'])
         uv_texture = albedo*uv_shading
 
-        ops_detail = self.render(verts, trans_verts, uv_texture, codedict['light'], h=h, w=w, background=background)
+        ops_detail = self.render(verts, trans_verts, uv_texture, codedict['light'], h=h, w=w)
         render_images = torch.maximum(torch.minimum(ops_detail['images'], torch.ones_like(ops_detail['images'])), torch.zeros_like(ops_detail['images']))
         render_images = render_images.detach().cpu()
 

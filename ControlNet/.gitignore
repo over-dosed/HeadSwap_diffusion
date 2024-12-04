@@ -3,6 +3,7 @@
 training/
 lightning_logs/
 image_log/
+inference_outputs/
 
 *.pth
 *.pt

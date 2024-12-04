@@ -346,12 +346,18 @@ class ControlLDM_HSD(LatentDiffusion):
         c = self.get_learned_conditioning(zero_condition)
         c = self.proj_out(c)
         return c
+    
+    def un_norm_clip(self, x):
+                    x[:,0,:,:] = x[:,0,:,:] * 0.26862954 + 0.48145466
+                    x[:,1,:,:] = x[:,1,:,:] * 0.26130258 + 0.4578275
+                    x[:,2,:,:] = x[:,2,:,:] * 0.27577711 + 0.40821073
+                    return x
 
     @torch.no_grad()
-    def log_images(self, batch, N=4, n_row=2, sample=False, ddim_steps=50, ddim_eta=0.0, return_keys=None,
+    def log_images(self, batch, N=4, n_row=2, sample=True, ddim_steps=50, ddim_eta=0.0, return_keys=None,
                    quantize_denoised=True, inpaint=True, plot_denoise_rows=False, plot_progressive_rows=True,
-                   plot_diffusion_rows=False, unconditional_guidance_scale=9.0, unconditional_guidance_label=None,
-                   use_ema_scope=True,
+                   plot_diffusion_rows=False, unconditional_guidance_scale=2.0 , unconditional_guidance_label=None,
+                   use_ema_scope=True, plot_no_condition = True,
                    **kwargs):
         use_ddim = ddim_steps is not None
 
@@ -363,7 +369,7 @@ class ControlLDM_HSD(LatentDiffusion):
         log["reconstruction"] = self.decode_first_stage(z)
         log["control"] = c_cat * 2.0 - 1.0
         # log["conditioning"] = log_txt_as_img((512, 512), batch[self.cond_stage_key], size=16)
-        log["conditioning"] = batch['source_global']
+        log["conditioning"] = self.un_norm_clip(batch['source_global'])
 
         if plot_diffusion_rows:
             # get diffusion row
@@ -394,6 +400,15 @@ class ControlLDM_HSD(LatentDiffusion):
                 denoise_grid = self._get_denoise_row_from_list(z_denoise_row)
                 log["denoise_row"] = denoise_grid
 
+        if plot_no_condition:
+            # zero_condtion has the same shape, dtype and devices
+            zero_condition = torch.zeros_like(c, device= c.device)
+            samples, z_denoise_row = self.sample_log(cond={"c_concat": [c_cat], "c_crossattn": [zero_condition]},
+                                                     batch_size=N, ddim=use_ddim,
+                                                     ddim_steps=ddim_steps, eta=ddim_eta, rest=z[:N,4:,:,:])
+            x_samples = self.decode_first_stage(samples)
+            log["s_nocondition"] = x_samples
+
         if unconditional_guidance_scale > 1.0:
             uc_cross = self.get_unconditional_conditioning(N)
             uc_cat = c_cat  # torch.zeros_like(c_cat)
@@ -406,7 +421,8 @@ class ControlLDM_HSD(LatentDiffusion):
                                              rest=z[:,4:,:,:]
                                              )
             x_samples_cfg = self.decode_first_stage(samples_cfg)
-            log[f"samples_cfg_scale_{unconditional_guidance_scale:.2f}"] = x_samples_cfg
+            # log[f"samples_cfg_scale_{unconditional_guidance_scale:.2f}"] = x_samples_cfg
+            log["samples_cfg_scale"] = x_samples_cfg
 
         return log
 
@@ -421,6 +437,11 @@ class ControlLDM_HSD(LatentDiffusion):
     def configure_optimizers(self):
         lr = self.learning_rate
         params = list(self.control_model.parameters())
+
+        # # for train v3.1
+        # params += list(self.cond_stage_model.final_ln.parameters())
+        # params += list(self.cond_stage_model.mapper.parameters())
+
         if not self.sd_locked:
             params += list(self.model.diffusion_model.output_blocks.parameters())
             params += list(self.model.diffusion_model.out.parameters())

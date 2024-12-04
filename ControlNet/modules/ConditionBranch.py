@@ -19,7 +19,7 @@ class Condition_Branch(nn.Module):
         self.deca.eval()
         
 
-    def forward(self, codedict, original_images):
+    def forward(self, codedict):
         # codedict_source & codedict_target: python dict of {'tforms', 'shape', 'tex', 'exp', 'pose', 'cam', 'light'}, tensor, cuda
         # each item has shape (B, _)
         # original_images: tensor, cuda, B*3*512*512, RGB, 0~1
@@ -27,8 +27,7 @@ class Condition_Branch(nn.Module):
         with torch.no_grad():
             for key in codedict:
                 codedict[key] = codedict[key].to(self.deca.device)
-            original_images_device = original_images.to(self.deca.device)
-            render_image = self.deca.render_for_hsd(codedict, original_images_device)  # (B, 3, 512, 512), tensor, GPU, 0~1
+            render_image = self.deca.render_for_hsd(codedict)  # (B, 3, 512, 512), tensor, GPU, 0~1
             # render_image = Image.fromarray((reder_image[0].cpu().numpy().transpose(1, 2, 0) * 255).astype('uint8'))
 
         return render_image
